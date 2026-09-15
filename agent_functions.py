@@ -13,10 +13,17 @@ def clean_llm_code(response_text: str) -> str:
     return response_text.replace("```", "").strip()
 
 def get_env_with_pythonpath(project_root: str = ".") -> dict:
-    """Configura las variables de entorno agregando la raíz al PYTHONPATH para evitar ModuleNotFoundError."""
+    """Configura las variables de entorno agregando la raíz y Public_Proyects al PYTHONPATH."""
     env = os.environ.copy()
     abs_root = os.path.abspath(project_root)
-    env["PYTHONPATH"] = f"{abs_root}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    public_projects_path = os.path.abspath(os.path.join(abs_root, "Public_Proyects"))
+
+    # Unir rutas en PYTHONPATH
+    pythonpath_entries = [abs_root, public_projects_path]
+    if "PYTHONPATH" in env and env["PYTHONPATH"]:
+        pythonpath_entries.append(env["PYTHONPATH"])
+
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
     return env
 
 def run_pytest(test_file_path: str, project_root: str = ".") -> tuple[bool, str]:
@@ -43,14 +50,20 @@ def measure_coverage(test_file_path: str, target_file_path: str, output_folder: 
     json_report = os.path.join(output_folder, "coverage.json")
     env = get_env_with_pythonpath(".")
 
-    # 1. Ejecutar coverage run
+    target_abs = os.path.abspath(target_file_path)
+
+    # 1. Ejecutar coverage run acotando al archivo objetivo
     cmd_run = [
         sys.executable, "-m", "coverage", "run",
         f"--data-file={coverage_file}",
+        f"--include={target_abs}",
         "--branch",
         "-m", "pytest", test_file_path
     ]
-    subprocess.run(cmd_run, capture_output=True, text=True, env=env, timeout=20)
+    res_run = subprocess.run(cmd_run, capture_output=True, text=True, env=env, timeout=20)
+    
+    if res_run.returncode != 0:
+        print(f"\n[Coverage Warning] Fallo en 'coverage run':\n{res_run.stdout}\n{res_run.stderr}")
 
     # 2. Generar reporte JSON
     cmd_json = [
@@ -58,7 +71,10 @@ def measure_coverage(test_file_path: str, target_file_path: str, output_folder: 
         f"--data-file={coverage_file}",
         "-o", json_report
     ]
-    subprocess.run(cmd_json, capture_output=True, text=True, env=env, timeout=10)
+    res_json = subprocess.run(cmd_json, capture_output=True, text=True, env=env, timeout=10)
+    
+    if res_json.returncode != 0:
+        print(f"\n[Coverage Warning] Fallo en 'coverage json':\n{res_json.stderr}")
 
     line_cov, branch_cov = 0.0, 0.0
     missing_lines_info = ""
@@ -69,7 +85,6 @@ def measure_coverage(test_file_path: str, target_file_path: str, output_folder: 
             with open(json_report, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            target_abs = os.path.abspath(target_file_path)
             files_data = data.get("files", {})
 
             file_stats = None
@@ -94,7 +109,7 @@ def measure_coverage(test_file_path: str, target_file_path: str, output_folder: 
                 if missing_lines:
                     missing_lines_info += f"\nLíneas no cubiertas: {missing_lines}"
                 if missing_branches:
-                    missing_lines_info += f"\nRamas no cubiertas (origen, destino): {missing_branches}"
+                    missing_lines_info += f"\nRamas no cubiertas: {missing_branches}"
 
         except Exception as e:
             print(f"[Tools] Error al leer reporte de cobertura: {e}")
