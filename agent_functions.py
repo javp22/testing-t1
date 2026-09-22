@@ -131,21 +131,25 @@ def measure_coverage(test_file_path: str, target_file_path: str, output_folder: 
 
 def measure_mutation(test_file_path: str, target_file_path: str, output_folder: str, config_file: str = "cosmic-ray.toml") -> float:
     """
-    Mide Mutation Score utilizando Cosmic Ray con reporte detallado y parseo de respaldo.
+    Mide Mutation Score utilizando Cosmic Ray con optimización de ejecución rápida (-x)
+    y lectura directa de base de datos SQLite para soportar ejecuciones parciales.
     """
     abs_output = os.path.abspath(output_folder)
     os.makedirs(abs_output, exist_ok=True)
 
-    # Normalizar rutas con barras inclinadas para compatibilidad con TOML en Windows/Linux
+    # Normalizar rutas con barras inclinadas (compatibilidad Windows/Linux)
+    python_exec = sys.executable.replace("\\", "/")
     rel_target = os.path.relpath(os.path.abspath(target_file_path), PROJECT_ROOT).replace("\\", "/")
     rel_test = os.path.relpath(os.path.abspath(test_file_path), PROJECT_ROOT).replace("\\", "/")
 
     temp_config_path = os.path.join(abs_output, "cosmic-ray-run.toml")
+    
+    # Se agrega -x a pytest para abortar la suite en cuanto un test falle contra el mutante
     config_content = f"""[cosmic-ray]
 module-path = "{rel_target}"
 timeout = 3.0
 excluded-modules = []
-test-command = "{sys.executable} -m pytest -q --tb=no {rel_test}"
+test-command = "{python_exec} -m pytest -x -q --tb=no {rel_test}"
 
 [cosmic-ray.distributor]
 name = "local"
@@ -163,7 +167,7 @@ name = "local"
             pass
 
     try:
-        # 1. Inicializar Cosmic Ray (Genera la lista de mutantes)
+        # 1. Inicializar Cosmic Ray
         cmd_init = ["cosmic-ray", "init", temp_config_path, session_db]
         res_init = subprocess.run(cmd_init, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=15)
 
@@ -171,60 +175,59 @@ name = "local"
             print(f"[Mutation Warning] Cosmic Ray init falló:\n{res_init.stderr.strip() or res_init.stdout.strip()}")
             return 0.0
 
-        # 2. Ejecutar pruebas contra cada mutante
+        # 2. Ejecutar mutantes
         cmd_exec = ["cosmic-ray", "exec", temp_config_path, session_db]
         try:
-            subprocess.run(cmd_exec, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=50)
+            subprocess.run(cmd_exec, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=40)
         except subprocess.TimeoutExpired:
-            print("[Mutation Warning] Tiempo límite alcanzado. Evaluando mutantes procesados...")
+            print("[Mutation Warning] Tiempo límite alcanzado en 'exec'. Analizando mutantes procesados hasta el momento...")
 
-        # 3. Obtener el resumen de resultados
-        cmd_summary = ["cosmic-ray", "summary", session_db]
-        res_summary = subprocess.run(cmd_summary, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=10)
-        output = res_summary.stdout + "\n" + res_summary.stderr
+        # 3. Leer la base de datos SQLite directamente para procesar completados y pendientes
+        killed, survived, total_evaluados, total_generados = 0, 0, 0, 0
 
-        # Extraer métricas con expresiones regulares
-        killed_match = re.search(r"killed:\s*(\d+)", output, re.IGNORECASE)
-        survived_match = re.search(r"survived:\s*(\d+)", output, re.IGNORECASE)
-        total_match = re.search(r"(?:total jobs|total):\s*(\d+)", output, re.IGNORECASE)
-
-        killed = int(killed_match.group(1)) if killed_match else 0
-        survived = int(survived_match.group(1)) if survived_match else 0
-        total = int(total_match.group(1)) if total_match else 0
-
-        # Respando: Consulta directa a la base de datos SQLite si el parser de texto falla
-        if total == 0 and os.path.exists(session_db):
+        if os.path.exists(session_db):
             try:
                 import sqlite3
                 conn = sqlite3.connect(session_db)
                 cursor = conn.cursor()
-                
-                cursor.execute("SELECT count(*) FROM work_items")
-                total = cursor.fetchone()[0]
 
-                cursor.execute("SELECT count(*) FROM work_items WHERE test_outcome LIKE '%KILLED%' OR worker_outcome LIKE '%NORMAL%' AND test_outcome NOT LIKE '%SURVIVED%'")
-                killed = cursor.fetchone()[0]
+                cursor.execute("SELECT test_outcome, worker_outcome FROM work_items")
+                rows = cursor.fetchall()
+                total_generados = len(rows)
 
-                cursor.execute("SELECT count(*) FROM work_items WHERE test_outcome LIKE '%SURVIVED%'")
-                survived = cursor.fetchone()[0]
+                for test_outcome, worker_outcome in rows:
+                    t_out = str(test_outcome or "").upper()
+                    w_out = str(worker_outcome or "").upper()
+
+                    # Un mutante se considera procesado si tiene outcome registrado
+                    if (t_out and t_out != "NONE") or (w_out and w_out != "NONE"):
+                        total_evaluados += 1
+                        if "KILLED" in t_out or "INCOMPETENT" in t_out:
+                            killed += 1
+                        elif "SURVIVED" in t_out:
+                            survived += 1
+                        elif w_out == "NORMAL" and "SURVIVED" not in t_out:
+                            killed += 1
 
                 conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[Mutation Warning] Error al leer la base de datos de Cosmic Ray: {e}")
 
-        if total == 0:
-            print(f"[Mutation Warning] No se generaron mutantes para '{rel_target}'. Verifica que la ruta apunte a un archivo Python con código ejecutable.")
+        if total_generados == 0:
+            print(f"[Mutation Warning] No se generaron mutantes para '{rel_target}'.")
             return 0.0
 
-        # Calcular Mutation Score: (Mutantes Eliminados / Total de Mutantes)
-        mutation_score = round(killed / total, 2)
+        # Si se procesó al menos un mutante, se calcula la tasa respecto a los evaluados;
+        # si se completaron todos, coincide con el total.
+        denominator = total_evaluados if total_evaluados > 0 else total_generados
+        mutation_score = round(killed / denominator, 2) if denominator > 0 else 0.0
 
-        # Trazabilidad extendida en consola
         print(f"\n[Mutation Metrics] Resumen para: {rel_target}")
-        print(f" ├─ Mutantes Totales Generados : {total}")
+        print(f" ├─ Mutantes Totales Generados : {total_generados}")
+        print(f" ├─ Mutantes Evaluados         : {total_evaluados}")
         print(f" ├─ Mutantes Eliminados (Killed): {killed}")
-        print(f" ├─ Mutantes Sobrevivientes      : {survived}")
-        print(f" └─ Mutation Score Final        : {mutation_score * 100:.1f}% ({killed}/{total})\n")
+        print(f" ├─ Mutantes Sobrevivientes    : {survived}")
+        print(f" └─ Mutation Score Final        : {mutation_score * 100:.1f}% ({killed}/{denominator})\n")
 
         return mutation_score
 

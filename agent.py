@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import time
 from dotenv import load_dotenv
 from google import genai
 from agent_functions import (
@@ -43,10 +44,28 @@ def write_test_file(test_file_path: str, test_code: str) -> None:
         f.write(test_code)
 
 
-def ask_llm(chat, prompt: str) -> str:
-    """Envía un prompt al chat de Gemini y retorna el código de test limpio."""
-    response = chat.send_message(prompt)
-    return clean_llm_code(response.text)
+def ask_llm(chat, prompt: str, timer: ExecutionTimer = None, max_retries: int = 3, initial_delay: float = 2.0) -> str:
+    """Envía un prompt al chat de Gemini con sistema de reintentos y control de tiempo."""
+    delay = initial_delay
+    for attempt in range(1, max_retries + 1):
+        if timer and (timer.is_expired() or timer.time_left() < MIN_TIME_FOR_LLM_CALL):
+            raise TimeoutError("Tiempo insuficiente para realizar la solicitud al LLM.")
+
+        try:
+            response = chat.send_message(prompt)
+            return clean_llm_code(response.text)
+        except Exception as e:
+            if attempt == max_retries:
+                print(f"[Agent Warning] Se agotaron los {max_retries} intentos con Gemini: {e}")
+                raise e
+
+            if timer and (timer.time_left() < delay + MIN_TIME_FOR_LLM_CALL):
+                print(f"[Agent Warning] Tiempo restante insuficiente para esperar reintento ({timer.time_left():.1f}s).")
+                raise e
+
+            print(f"[Agent Warning] Falló la llamada a Gemini (intento {attempt}/{max_retries}): {e}. Reintentando en {delay:.1f}s...")
+            time.sleep(delay)
+            delay *= 1.5
 
 
 def main(ruta_archivo, output_folder):
@@ -88,7 +107,7 @@ def main(ruta_archivo, output_folder):
     # Generación inicial
     try:
         prompt = build_generation_prompt(source_code, class_name, ruta_archivo_abs)
-        test_code = ask_llm(chat, prompt)
+        test_code = ask_llm(chat, prompt, timer)
         write_test_file(test_file_path, test_code)
     except Exception as e:
         print(f"[Agent] Error en la generación inicial: {e}")
@@ -114,7 +133,7 @@ def main(ruta_archivo, output_folder):
         )
         try:
             prompt = build_fix_prompt(source_code, test_code, logs)
-            test_code = ask_llm(chat, prompt)
+            test_code = ask_llm(chat, prompt, timer)
             write_test_file(test_file_path, test_code)
         except Exception as e:
             print(f"[Agent] Error al pedir corrección al LLM: {e}")
@@ -154,7 +173,7 @@ def main(ruta_archivo, output_folder):
                 prompt = build_coverage_prompt(
                     source_code, test_code, report, line_cov, branch_cov
                 )
-                candidate_code = ask_llm(chat, prompt)
+                candidate_code = ask_llm(chat, prompt, timer)
                 write_test_file(test_file_path, candidate_code)
             except Exception as e:
                 print(f"[Agent] Error al pedir mejora de cobertura al LLM: {e}")
@@ -171,6 +190,7 @@ def main(ruta_archivo, output_folder):
                 write_test_file(test_file_path, best_test_code)
                 test_code = best_test_code
                 break
+
     # Mejora de mutation score
     mutation_score = 0.0
     if passing and timer.time_left() >= MIN_TIME_FOR_MUTATION:
@@ -198,7 +218,7 @@ def main(ruta_archivo, output_folder):
 
             try:
                 prompt = build_mutation_prompt(source_code, test_code, mutation_score)
-                candidate_code = ask_llm(chat, prompt)
+                candidate_code = ask_llm(chat, prompt, timer)
                 write_test_file(test_file_path, candidate_code)
             except Exception as e:
                 print(f"[Agent] Error al pedir mejora de mutation score al LLM: {e}")
@@ -217,6 +237,7 @@ def main(ruta_archivo, output_folder):
                 write_test_file(test_file_path, best_test_code)
                 test_code = best_test_code
                 break
+
     # Exportación de mejor código
     final_code = best_test_code if best_test_code else test_code
     write_test_file(test_file_path, final_code)
