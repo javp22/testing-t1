@@ -131,8 +131,8 @@ def measure_coverage(test_file_path: str, target_file_path: str, output_folder: 
 
 def measure_mutation(test_file_path: str, target_file_path: str, output_folder: str, config_file: str = "cosmic-ray.toml") -> float:
     """
-    Mide Mutation Score utilizando Cosmic Ray con optimización de ejecución rápida (-x)
-    y lectura directa de base de datos SQLite para soportar ejecuciones parciales.
+    Mide Mutation Score ejecutando Cosmic Ray y procesando la salida oficial
+    del comando 'cr-rate' vía subprocess.
     """
     abs_output = os.path.abspath(output_folder)
     os.makedirs(abs_output, exist_ok=True)
@@ -143,7 +143,7 @@ def measure_mutation(test_file_path: str, target_file_path: str, output_folder: 
     rel_test = os.path.relpath(os.path.abspath(test_file_path), PROJECT_ROOT).replace("\\", "/")
 
     temp_config_path = os.path.join(abs_output, "cosmic-ray-run.toml")
-    
+
     # Se agrega -x a pytest para abortar la suite en cuanto un test falle contra el mutante
     config_content = f"""[cosmic-ray]
 module-path = "{rel_target}"
@@ -180,60 +180,42 @@ name = "local"
         try:
             subprocess.run(cmd_exec, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=40)
         except subprocess.TimeoutExpired:
-            print("[Mutation Warning] Tiempo límite alcanzado en 'exec'. Analizando mutantes procesados hasta el momento...")
+            print("[Mutation Warning] Tiempo límite alcanzado en 'exec'. Procesando resultados parciales mediante cr-rate...")
 
-        # 3. Leer la base de datos SQLite directamente para procesar completados y pendientes
-        killed, survived, total_evaluados, total_generados = 0, 0, 0, 0
-
+        # 3. Calcular Mutation Score mediante la herramienta oficial 'cr-rate'
+        mutation_score = 0.0
         if os.path.exists(session_db):
-            try:
-                import sqlite3
-                conn = sqlite3.connect(session_db)
-                cursor = conn.cursor()
+            cmd_rate = ["cr-rate", session_db]
+            res_rate = subprocess.run(cmd_rate, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=15)
 
-                cursor.execute("SELECT test_outcome, worker_outcome FROM work_items")
-                rows = cursor.fetchall()
-                total_generados = len(rows)
+            if res_rate.returncode == 0:
+                stdout_text = res_rate.stdout.strip()
 
-                for test_outcome, worker_outcome in rows:
-                    t_out = str(test_outcome or "").upper()
-                    w_out = str(worker_outcome or "").upper()
+                # cr-rate reporta habitualmente el "Survival rate: X.XX%"
+                match_survival = re.search(r"Survival rate:\s*([\d\.]+)%", stdout_text, re.IGNORECASE)
 
-                    # Un mutante se considera procesado si tiene outcome registrado
-                    if (t_out and t_out != "NONE") or (w_out and w_out != "NONE"):
-                        total_evaluados += 1
-                        if "KILLED" in t_out or "INCOMPETENT" in t_out:
-                            killed += 1
-                        elif "SURVIVED" in t_out:
-                            survived += 1
-                        elif w_out == "NORMAL" and "SURVIVED" not in t_out:
-                            killed += 1
+                if match_survival:
+                    survival_rate = float(match_survival.group(1))
+                    # Mutation score (porcentaje de mutantes eliminados) = 100% - Survival rate
+                    mutation_score = round(max(0.0, (100.0 - survival_rate) / 100.0), 2)
+                else:
+                    # Búsqueda fallback por si la salida reporta un score directo o flotante
+                    match_score = re.search(r"([\d\.]+)", stdout_text)
+                    if match_score:
+                        val = float(match_score.group(1))
+                        mutation_score = round(val / 100.0 if val > 1.0 else val, 2)
 
-                conn.close()
-            except Exception as e:
-                print(f"[Mutation Warning] Error al leer la base de datos de Cosmic Ray: {e}")
-
-        if total_generados == 0:
-            print(f"[Mutation Warning] No se generaron mutantes para '{rel_target}'.")
-            return 0.0
-
-        # Si se procesó al menos un mutante, se calcula la tasa respecto a los evaluados;
-        # si se completaron todos, coincide con el total.
-        denominator = total_evaluados if total_evaluados > 0 else total_generados
-        mutation_score = round(killed / denominator, 2) if denominator > 0 else 0.0
-
-        print(f"\n[Mutation Metrics] Resumen para: {rel_target}")
-        print(f" ├─ Mutantes Totales Generados : {total_generados}")
-        print(f" ├─ Mutantes Evaluados         : {total_evaluados}")
-        print(f" ├─ Mutantes Eliminados (Killed): {killed}")
-        print(f" ├─ Mutantes Sobrevivientes    : {survived}")
-        print(f" └─ Mutation Score Final        : {mutation_score * 100:.1f}% ({killed}/{denominator})\n")
+                print(f"\n[Mutation Metrics] Resumen para: {rel_target}")
+                print(f" ├─ Salida cr-rate      : {stdout_text}")
+                print(f" └─ Mutation Score Final: {mutation_score * 100:.1f}%\n")
+            else:
+                print(f"[Mutation Warning] cr-rate no pudo procesar la sesión:\n{res_rate.stderr.strip()}")
 
         return mutation_score
 
     except FileNotFoundError:
-        print("[Mutation Warning] El comando 'cosmic-ray' no está instalado en el PATH.")
+        print("[Mutation Warning] 'cosmic-ray' o 'cr-rate' no están disponibles en el PATH.")
     except Exception as e:
-        print(f"[Mutation Warning] Error ejecutando Cosmic Ray: {e}")
+        print(f"[Mutation Warning] Error ejecutando medición de mutación: {e}")
 
     return 0.0
