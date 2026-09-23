@@ -1,23 +1,68 @@
 RULES_PROMPT = """
-Reglas estrictas que DEBES cumplir:
-1. SOLO puedes usar clases, métodos, atributos y funciones que aparezcan
-   explícitamente en el código fuente que se te entrega. Está prohibido
-   inventar métodos, parámetros o atributos que no existan.
-2. El archivo de salida debe ser código Python válido y ejecutable 
-   completamente con `pytest` (con todos los imports necesarios).
-3. Los imports deben corresponder exactamente a la ruta/módulo indicado.
-4. Evita aserciones triviales (ej. assert True, o comparar un
-   objeto contra sí mismo). Cada test debe validar un comportamiento real 
-   de la clase (casos normales, casos borde y casos de error/excepciones 
-   cuando aplique).
-5. NO inventes métodos, atributos, clases o módulos que no existan en el
-   código fuente entregado. Usa únicamente lo que puedas verificar en el
-   código fuente.
-6. No modifiques ni asumas codigo fuente adicional fuera del entregado.
-7. Responde ÚNICAMENTE con un bloque de código Python delimitado por
-   ```python y ```. No incluyas explicaciones, texto adicional ni
-   comentarios fuera del bloque de código.
-8. NO uses mocks para reemplazar la lógica que se quiere probar.
+REGLAS ESTRICTAS QUE DEBES CUMPLIR:
+
+1. SOLO puedes usar clases, métodos, funciones, atributos, excepciones,
+   constantes, parámetros y módulos que aparezcan explícitamente en el
+   código fuente entregado. NO inventes APIs.
+
+2. Los imports deben corresponder exactamente a los módulos y rutas que
+   pueden verificarse a partir del código fuente entregado. NO inventes
+   módulos ni rutas de importación.
+
+3. El resultado debe ser un archivo Python válido y ejecutable con pytest.
+
+4. NO modifiques el código fuente que se está testeando. Solo puedes
+   modificar la suite de tests.
+
+5. Cada test debe verificar un comportamiento real del código. No uses
+   aserciones triviales como:
+       assert True
+       assert False
+       assert obj == obj
+       assert result is not None
+   salvo que la condición "is not None" sea específicamente el comportamiento
+   que se desea verificar.
+
+6. NO uses mocks, monkeypatch, MagicMock, Mock ni técnicas equivalentes para
+   reemplazar la lógica que se quiere probar. Los tests deben ejecutar la
+   implementación real.
+
+7. Cuando pruebes excepciones, verifica la excepción concreta y, cuando sea
+   posible, también el comportamiento asociado a ella.
+
+8. NO asumas comportamiento que no pueda deducirse directamente del código
+   fuente. Si un comportamiento no está definido explícitamente, no lo
+   inventes.
+
+9. Para valores esperados, usa únicamente resultados que puedan derivarse
+   del código fuente.
+
+10. Si la suite de tests existente ya contiene tests correctos, NO los
+    elimines ni los debilites. Los cambios deben preservar su comportamiento.
+
+11. Cuando se solicite mejorar cobertura o mutation score, modifica la suite
+    de forma incremental. Prioriza agregar casos específicos antes que
+    reescribir tests existentes.
+
+12. Cada nuevo test debe tener una razón concreta:
+    - cubrir una línea no cubierta,
+    - cubrir una rama no cubierta,
+    - detectar un mutante específico,
+    - verificar un caso límite,
+    - o verificar un comportamiento de error.
+
+13. NO agregues tests cuyo único objetivo sea aumentar artificialmente una
+    métrica.
+
+14. Si un test existente ya detecta un caso, NO dupliques innecesariamente
+    ese caso.
+
+15. El código final debe contener todos los imports necesarios y debe ser
+    autocontenido como archivo de tests.
+
+16. Responde ÚNICAMENTE con un bloque de código Python delimitado por
+    ```python y ```.
+    NO incluyas explicaciones, texto adicional ni bloques adicionales.
 """
 
 

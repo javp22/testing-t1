@@ -39,6 +39,10 @@ MIN_MUTATION_SCORE = 0.50
 # 1 segundo restante, y la llamada a Gemini se cortaba a medio camino.
 MIN_TIME_FOR_LLM_CALL = 8.0
 
+# Máximo de intentos por cada llamada al LLM:
+# 1 intento inicial + 2 reintentos
+MAX_LLM_ATTEMPTS = 3
+
 
 def write_test_file(test_file_path: str, test_code: str) -> None:
     os.makedirs(os.path.dirname(test_file_path), exist_ok=True)
@@ -54,23 +58,16 @@ def ask_llm(
     max_delay: float = 30.0,
 ) -> str:
     """
-    Envía un prompt al chat de Gemini con reintentos.
+    Envía un prompt al chat de Gemini con un número limitado de reintentos.
 
-    En vez de un tope fijo de intentos, reintenta con backoff exponencial
-    (capado en max_delay) mientras quede tiempo suficiente en el timer. Así
-    aprovecha todo el budget disponible en vez de rendirse a los 3 intentos
-    aunque sobre tiempo (útil para los 503 de "high demand" de Gemini, que
-    suelen ser transitorios).
-
-    El tiempo dormido esperando un reintento (delay) NO cuenta contra el
-    presupuesto total: se le devuelve al timer con timer.add_time(delay),
-    porque esa espera es por algo fuera de nuestro control (la API caída),
-    no tiempo que el agente esté "trabajando".
+    Se permiten como máximo MAX_LLM_ATTEMPTS intentos por llamada.
+    Entre intentos se utiliza backoff exponencial para errores transitorios.
     """
+
     delay = initial_delay
     attempt = 0
 
-    while True:
+    while attempt < MAX_LLM_ATTEMPTS:
         attempt += 1
 
         if timer and (timer.is_expired() or timer.time_left() < MIN_TIME_FOR_LLM_CALL):
@@ -79,22 +76,42 @@ def ask_llm(
         try:
             response = chat.send_message(prompt)
             return clean_llm_code(response.text)
+
         except Exception as e:
+            # No seguir intentando si ya alcanzamos el máximo
+            if attempt >= MAX_LLM_ATTEMPTS:
+                print(
+                    f"[Agent Warning] Falló la llamada a Gemini "
+                    f"({attempt}/{MAX_LLM_ATTEMPTS}). "
+                    f"Se alcanzó el máximo de intentos. "
+                    f"No se realizarán más reintentos."
+                )
+                raise e
+
+            # Tampoco reintentar si no queda suficiente tiempo
             if timer and timer.time_left() < delay + MIN_TIME_FOR_LLM_CALL:
                 print(
-                    f"[Agent Warning] Tiempo restante insuficiente para esperar otro reintento "
-                    f"({timer.time_left():.1f}s). Se abandona tras {attempt} intento(s)."
+                    f"[Agent Warning] Tiempo restante insuficiente "
+                    f"para otro reintento ({timer.time_left():.1f}s). "
+                    f"Se abandona tras {attempt} intento(s)."
                 )
                 raise e
 
             print(
-                f"[Agent Warning] Falló la llamada a Gemini (intento {attempt}): {e}. Reintentando en {delay:.1f}s..."
+                f"[Agent Warning] Falló la llamada a Gemini "
+                f"(intento {attempt}/{MAX_LLM_ATTEMPTS}): {e}. "
+                f"Reintentando en {delay:.1f}s..."
             )
+
             time.sleep(delay)
+
             if timer:
                 timer.add_time(delay)
+
             delay = min(delay * 1.5, max_delay)
-            print("[Agent Warning] Tiempo se expande ya que intento no es válido ")
+
+    # Esto no debería alcanzarse
+    raise RuntimeError("Se alcanzó el máximo de intentos del LLM.")
 
 
 def main(ruta_archivo, output_folder):
@@ -381,8 +398,7 @@ def main(ruta_archivo, output_folder):
                 if not mejora_minimo:
                     print(
                         "[Agent] No se guarda: ninguna métrica que estaba bajo el "
-                        "mínimo mejoró respecto a la corrida anterior (si las tres "
-                        "ya cumplían el mínimo antes, esta condición nunca se activa)."
+                        "mínimo mejoró respecto a la corrida anterior."
                     )
                 if not line_se_mantuvo:
                     print(
