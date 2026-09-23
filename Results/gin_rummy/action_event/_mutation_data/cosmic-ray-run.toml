@@ -1,0 +1,8 @@
+[cosmic-ray]
+module-path = "Public_Proyects/gin_rummy/action_event.py"
+timeout = 3.0
+excluded-modules = []
+test-command = "/Users/javierapalacio/Documents/GitHub/testing-t1/venv/bin/python3 -m pytest -x -q --tb=no Results/gin_rummy/action_event/test_action_event.py"
+
+[cosmic-ray.distributor]
+name = "local"
