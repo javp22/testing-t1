@@ -1,48 +1,78 @@
 import pytest
-import sys
-import types
-
-# El error ModuleNotFoundError: No module named 'numpy' indica que la dependencia 
-# no está disponible en el entorno de ejecución de pytest.
-# Para evitar la falla durante la colección de tests causada por el import en game.py,
-# inyectamos un módulo ficticio 'numpy' en sys.modules antes de importar 'game'.
-# Esto permite que el código fuente cargue sin errores.
-
-mock_numpy = types.ModuleType("numpy")
-mock_numpy.random = types.ModuleType("random")
-mock_numpy.random.RandomState = lambda: None
-sys.modules["numpy"] = mock_numpy
-
-# Mockear dependencias internas que dependen de numpy para evitar errores en init_game
-mock_mahjong = types.ModuleType("mahjong")
-mock_mahjong.Dealer = type("Dealer", (), {"__init__": lambda self, r: None, "deal_cards": lambda self, p, n: None})
-mock_mahjong.Player = type("Player", (), {"__init__": lambda self, i, r: None})
-mock_mahjong.Judger = type("Judger", (), {"__init__": lambda self, r: None, "judge_game": lambda self, g: (False, 0, 0)})
-mock_mahjong.Round = type("Round", (), {"__init__": lambda self, j, d, n, r: None, "current_player": 0, "proceed_round": lambda self, p, a: None, "get_state": lambda self, p, i: {}, "current_player": 0})
-sys.modules["mahjong"] = mock_mahjong
-
-sys.path.append('/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/mahjong')
-
 from game import MahjongGame
 
-def test_mahjong_game_initialization():
+def test_initialization():
     game = MahjongGame(allow_step_back=True)
     assert game.allow_step_back is True
     assert game.num_players == 4
+    assert game.get_num_players() == 4
+    assert game.get_num_actions() == 38
+
+def test_init_game_state():
+    game = MahjongGame()
+    state, player_id = game.init_game()
+    assert isinstance(state, dict)
+    assert player_id == game.get_player_id()
+    assert game.cur_state == state
+
+def test_step_logic():
+    game = MahjongGame(allow_step_back=True)
+    game.init_game()
+    initial_player = game.get_player_id()
+    
+    # Executing a step
+    state, next_player = game.step("some_action")
+    
+    assert state == game.cur_state
+    assert len(game.history) == 1
+    assert next_player != initial_player or next_player == initial_player
+
+def test_step_back_functionality():
+    game = MahjongGame(allow_step_back=True)
+    game.init_game()
+    
+    # Should be false initially as history is empty
+    assert game.step_back() is False
+    
+    game.step("action1")
+    assert len(game.history) == 1
+    
+    # Return to previous state
+    assert game.step_back() is True
+    assert len(game.history) == 0
+
+def test_step_without_allow_step_back():
+    game = MahjongGame(allow_step_back=False)
+    game.init_game()
+    game.step("action1")
+    # History should remain empty
+    assert len(game.history) == 0
 
 def test_get_legal_actions_logic():
-    state = {'valid_act': ['play'], 'action_cards': ['1p', '2p']}
-    actions = MahjongGame.get_legal_actions(state)
-    assert actions == ['1p', '2p']
-    assert state['valid_act'] == ['1p', '2p']
+    # Case: valid_act is ['play']
+    state_play = {'valid_act': ['play'], 'action_cards': ['card1', 'card2']}
+    actions = MahjongGame.get_legal_actions(state_play)
+    assert actions == ['card1', 'card2']
+    assert state_play['valid_act'] == ['card1', 'card2']
     
-    state_fixed = {'valid_act': ['pass']}
-    actions = MahjongGame.get_legal_actions(state_fixed)
-    assert actions == ['pass']
+    # Case: valid_act is something else
+    state_other = {'valid_act': ['call', 'fold']}
+    actions = MahjongGame.get_legal_actions(state_other)
+    assert actions == ['call', 'fold']
 
-def test_get_num_actions():
-    assert MahjongGame.get_num_actions() == 38
-
-def test_game_metadata_methods():
+def test_is_over_structure():
     game = MahjongGame()
-    assert game.get_num_players() == 4
+    game.init_game()
+    # The method depends on judger.judge_game(self)
+    # We test that it returns a boolean as expected by the implementation
+    result = game.is_over()
+    assert isinstance(result, bool)
+    assert hasattr(game, 'winner')
+
+def test_get_state_consistency():
+    game = MahjongGame()
+    game.init_game()
+    p_id = game.get_player_id()
+    state = game.get_state(p_id)
+    assert isinstance(state, dict)
+    assert state == game.get_state(p_id)

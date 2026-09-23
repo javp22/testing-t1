@@ -2,7 +2,7 @@
 module-path = "Public_Proyects/mahjong/player.py"
 timeout = 3.0
 excluded-modules = []
-test-command = "/Users/javierapalacio/Documents/GitHub/testing-t1/venv/bin/python3 -m pytest -q --tb=no Results/mahjong/player/test_player.py"
+test-command = "/Users/javierapalacio/Documents/GitHub/testing-t1/venv/bin/python3 -m pytest -x -q --tb=no Results/mahjong/player/test_player.py"
 
 [cosmic-ray.distributor]
 name = "local"

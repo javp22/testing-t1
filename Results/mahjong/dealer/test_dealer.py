@@ -1,72 +1,77 @@
-import sys
-import os
 import pytest
-from unittest.mock import MagicMock
+import sys
+from unittest.mock import MagicMock, patch
 
-# Ajuste necesario para localizar el archivo dealer.py dado que el ejecutor 
-# busca en una ruta específica que puede no estar en el PYTHONPATH
-sys.path.append("/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/mahjong")
+# Configuración de path para importar el módulo bajo prueba
+sys.path.append('/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/mahjong')
+sys.path.append('/Users/javierapalacio/Documents/GitHub/testing-t1')
 
-from dealer import MahjongDealer
+# Se mockea init_deck para devolver una lista nueva en cada llamada, 
+# evitando que los tests compartan el estado de la lista.
+def create_mock_deck():
+    return ["c1", "c2", "c3", "c4", "c5"]
+
+mock_utils = MagicMock()
+mock_utils.init_deck = create_mock_deck
+
+with patch.dict(sys.modules, {'utils': mock_utils}):
+    from dealer import MahjongDealer
 
 class MockPlayer:
     def __init__(self):
         self.hand = []
 
-def test_mahjong_dealer_initialization():
-    # Inicialización con un objeto que soporte el método shuffle
-    np_random = MagicMock()
+@pytest.fixture
+def mock_random():
+    return MagicMock()
+
+def test_mahjong_dealer_initialization(mock_random):
+    dealer = MahjongDealer(mock_random)
     
-    dealer = MahjongDealer(np_random)
-    
-    # Validaciones según estructura de MahjongDealer
-    assert dealer.deck is not None
-    assert isinstance(dealer.table, list)
-    assert np_random.shuffle.called
+    assert len(dealer.deck) == 5
+    assert mock_random.shuffle.called
     assert dealer.table == []
 
-def test_shuffle():
-    np_random = MagicMock()
-    dealer = MahjongDealer(np_random)
-    
-    # El método shuffle delega la operación a np_random.shuffle
+def test_mahjong_dealer_shuffle(mock_random):
+    dealer = MahjongDealer(mock_random)
+    mock_random.shuffle.reset_mock()
     dealer.shuffle()
-    
-    # Verificar llamada con el deck actual
-    np_random.shuffle.assert_called_with(dealer.deck)
+    assert mock_random.shuffle.called
+    mock_random.shuffle.assert_called_with(dealer.deck)
 
-def test_deal_cards_normal():
-    np_random = MagicMock()
-    dealer = MahjongDealer(np_random)
+def test_deal_cards_normal(mock_random):
+    dealer = MahjongDealer(mock_random)
     player = MockPlayer()
     
-    initial_count = len(dealer.deck)
-    num_to_deal = 3
+    dealer.deal_cards(player, 2)
     
-    dealer.deal_cards(player, num_to_deal)
-    
-    # Verificar que las cartas fueron movidas del deck a la mano del jugador
-    assert len(player.hand) == num_to_deal
-    assert len(dealer.deck) == initial_count - num_to_deal
+    assert len(player.hand) == 2
+    assert len(dealer.deck) == 3
 
-def test_deal_cards_zero():
-    np_random = MagicMock()
-    dealer = MahjongDealer(np_random)
+def test_deal_cards_zero(mock_random):
+    dealer = MahjongDealer(mock_random)
     player = MockPlayer()
     
-    initial_count = len(dealer.deck)
     dealer.deal_cards(player, 0)
     
-    # No debe haber cambios
+    # El deck debe mantener sus 5 cartas iniciales
     assert len(player.hand) == 0
-    assert len(dealer.deck) == initial_count
+    assert len(dealer.deck) == 5
 
-def test_deal_cards_index_error():
-    np_random = MagicMock()
-    dealer = MahjongDealer(np_random)
+def test_deal_cards_empty_deck_raises_exception(mock_random):
+    dealer = MahjongDealer(mock_random)
     player = MockPlayer()
     
-    # Intentar sacar más cartas de las existentes disparará IndexError en pop()
-    total_cards = len(dealer.deck)
+    # Vaciar el deck manualmente
+    dealer.deck = []
+        
     with pytest.raises(IndexError):
-        dealer.deal_cards(player, total_cards + 1)
+        dealer.deal_cards(player, 1)
+
+def test_deal_cards_exceeding_deck_raises_exception(mock_random):
+    dealer = MahjongDealer(mock_random)
+    player = MockPlayer()
+    
+    # Intentar sacar 6 cartas de un deck inicial de 5
+    with pytest.raises(IndexError):
+        dealer.deal_cards(player, 6)

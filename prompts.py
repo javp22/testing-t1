@@ -142,46 +142,66 @@ def build_mutation_prompt(
     source_code: str,
     test_code: str,
     mutation_score: float,
+    surviving_mutants_report: str,
 ) -> str:
     """
     Prompt de mejora de mutation score: se usa cuando los tests pasan y
-    cumplen cobertura, pero el mutation score sigue bajo el umbral (>= 50%).
-    Esto generalmente indica que las aserciones son débiles o triviales
-    (cubren la línea pero no verifican el resultado real), por lo que se
-    le pide al modelo reforzar las aserciones en vez de solo agregar más
-    tests.
+    cumplen cobertura, pero existen mutantes sobrevivientes. Se entrega
+    el detalle de cada mutante para que el modelo agregue o refuerce tests
+    específicamente capaces de detectarlos.
     """
     return f"""
-La siguiente suite de pruebas pasa y tiene buena cobertura de líneas y
-ramas, pero su Mutation Score es de solo {mutation_score * 100:.1f}%
-(objetivo: >= 50%). Un mutation score bajo con buena cobertura generalmente
-significa que las aserciones son débiles, triviales, o no verifican
-valores concretos de retorno/estado (por ejemplo, solo verifican que no
-haya excepción, en vez de comparar el resultado exacto esperado).
- 
+La siguiente suite de pruebas pasa y tiene buena cobertura, pero existen
+mutantes de código que sobreviven a los tests.
+
+Mutation Score actual:
+{mutation_score * 100:.1f}%
+
 Código fuente original:
 ```python
 {source_code}
-```
- 
+````
+
 Suite de tests actual:
+
 ```python
 {test_code}
 ```
- 
-Refuerza la suite de tests para matar más mutantes:
-- Reemplaza aserciones débiles (assertIsNotNone, assert sin comparación de
-  valor, try/except que solo verifica que no truene) por comparaciones
-  exactas del valor/resultado esperado.
-- Verifica valores límite exactos (por ejemplo, si hay comparaciones como
-  `>`, prueba también el caso `==` para detectar mutaciones de operador).
-- Verifica el estado interno del objeto después de cada operación relevante,
-  no solo el valor de retorno.
-- No elimines cobertura ya lograda; refuerza sin romper tests que ya
-  funcionan.
- 
+
+Los siguientes son los mutantes que sobrevivieron a la última ejecución
+de Cosmic Ray:
+
+```text
+{surviving_mutants_report}
+```
+
+Tu tarea es modificar la suite de tests para que los mutantes
+sobrevivientes sean detectados y eliminados.
+
+Para cada mutante sobreviviente:
+
+1. Identifica qué cambio introduce el mutante.
+2. Identifica qué comportamiento del código original permite distinguirlo
+   del código mutado.
+3. Agrega o modifica tests que verifiquen explícitamente ese comportamiento.
+4. Usa valores concretos que hagan que el código original y el código
+   mutado produzcan resultados diferentes.
+5. Si el mutante cambia un operador (`>`, `<`, `==`, `!=`, `+`, `-`, etc.),
+   prueba valores límite que permitan detectar específicamente ese cambio.
+6. Si cambia un valor retornado, verifica el valor exacto esperado.
+7. Si cambia una condición, crea casos que recorran ambos lados de la
+   condición.
+8. Si cambia una excepción o una rama de error, verifica explícitamente el
+   comportamiento esperado.
+9. No agregues tests únicamente para aumentar cobertura: cada test debe
+   ser capaz de detectar uno o más de los mutantes sobrevivientes.
+10. No elimines tests existentes que ya funcionan.
+
+Es importante que NO asumas que todos los mutantes requieren un test
+nuevo. Si un test existente puede reforzarse para detectar un mutante,
+modifica ese test en lugar de duplicar lógica innecesariamente.
+
 {RULES_PROMPT}
- 
-Devuelve la suite de tests completa y actualizada (no solo el fragmento
-nuevo).
+
+Devuelve la suite de tests completa y actualizada (no solo los tests nuevos).
 """
