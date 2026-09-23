@@ -1,5 +1,5 @@
 {
-    "line_coverage": 0.48,
-    "branch_coverage": 0.25,
-    "mutation_score": 0.0
+    "line_coverage": 0.98,
+    "branch_coverage": 0.75,
+    "mutation_score": 0.6
 }

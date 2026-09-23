@@ -1,0 +1,8 @@
+[cosmic-ray]
+module-path = "Public_Proyects/fuzzywuzzy/string_processing.py"
+timeout = 3.0
+excluded-modules = []
+test-command = "/root/not-root-env/bin/python3 -m pytest -x -q --tb=no Results/fuzzywuzzy/string_processing/test_string_processing.py"
+
+[cosmic-ray.distributor]
+name = "local"

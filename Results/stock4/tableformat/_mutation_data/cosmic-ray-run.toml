@@ -1,0 +1,8 @@
+[cosmic-ray]
+module-path = "Public_Proyects/stock4/tableformat.py"
+timeout = 3.0
+excluded-modules = []
+test-command = "/root/not-root-env/bin/python3 -m pytest -x -q --tb=no Results/stock4/tableformat/test_tableformat.py"
+
+[cosmic-ray.distributor]
+name = "local"

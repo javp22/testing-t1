@@ -1,81 +1,83 @@
 import pytest
-import sys
-
-# El error "ModuleNotFoundError: No module named 'numpy'" indica que el entorno 
-# de ejecución de pytest no tiene instaladas las librerías necesarias.
-# Dado que el código fuente requiere 'numpy' y 'scipy', estos deben estar disponibles.
-# Si el entorno no los tiene, la única forma de que la suite sea ejecutable es 
-# manejando la importación condicionalmente o asumiendo que el entorno será 
-# corregido, pero el código debe cumplir con la sintaxis de Python 3.14.
-
-try:
-    import numpy as np
-    from scipy import stats
-except ImportError:
-    # Si las librerías no están instaladas, el test no puede ejecutarse.
-    # Se utiliza pytest.skip para evitar el error de recolección.
-    pytest.skip("Las librerías numpy y scipy son necesarias para ejecutar estos tests", allow_module_level=True)
-
+import numpy as np
 from base import (
-    f_entropy, information_gain, mse_criterion, xgb_criterion,
-    get_split_mask, split, split_dataset
+    f_entropy, 
+    information_gain, 
+    mse_criterion, 
+    xgb_criterion, 
+    get_split_mask, 
+    split, 
+    split_dataset
 )
 
 class MockLoss:
     def gain(self, actual, y_pred):
-        return np.sum((actual - y_pred) ** 2)
+        return float(np.sum(actual - y_pred))
 
 def test_f_entropy():
-    p = np.array([0, 1])
+    # Caso normal
+    p = np.array([0, 0, 1, 1])
     entropy = f_entropy(p)
     assert isinstance(entropy, float)
-    assert entropy >= 0.0
     
-    p_ones = np.array([0, 0, 0])
-    assert f_entropy(p_ones) == 0.0
+    # Caso borde: un solo valor, entropía 0
+    p_single = np.array([1, 1, 1])
+    assert f_entropy(p_single) == 0.0
 
 def test_information_gain():
     y = np.array([0, 0, 1, 1])
     splits = [np.array([0, 0]), np.array([1, 1])]
     gain = information_gain(y, splits)
-    assert gain > 0.0
+    # La entropía de [0,0,1,1] es ln(2), dividiendo perfectamente resulta en ganancia positiva
+    assert gain > 0
 
 def test_mse_criterion():
-    y = np.array([1.0, 2.0, 3.0, 4.0])
-    splits = [np.array([1.0, 2.0]), np.array([3.0, 4.0])]
-    mse = mse_criterion(y, splits)
-    assert mse < 0.0
+    y = np.array([1.0, 2.0, 3.0])
+    splits = [np.array([1.0]), np.array([2.0, 3.0])]
+    result = mse_criterion(y, splits)
+    assert isinstance(result, float)
+    # La suma de errores al cuadrado ponderada debe ser negativa según la implementación
+    assert result <= 0
 
 def test_xgb_criterion():
     loss = MockLoss()
-    y = {"actual": np.array([1.0, 2.0]), "y_pred": np.array([1.0, 2.0])}
-    left = {"actual": np.array([1.0]), "y_pred": np.array([1.0])}
-    right = {"actual": np.array([2.0]), "y_pred": np.array([2.0])}
+    y = {"actual": np.array([1.0, 2.0]), "y_pred": np.array([0.5, 0.5])}
+    left = {"actual": np.array([1.0]), "y_pred": np.array([0.5])}
+    right = {"actual": np.array([2.0]), "y_pred": np.array([0.5])}
+    
     gain = xgb_criterion(y, left, right, loss)
+    # left_gain = 0.5, right_gain = 1.5, initial = 2.0. gain = 0.5 + 1.5 - 2.0 = 0
     assert gain == 0.0
 
 def test_get_split_mask():
     X = np.array([[1, 2], [3, 4], [5, 6]])
-    left_mask, right_mask = get_split_mask(X, 0, 3)
-    assert left_mask[0] is True
-    assert left_mask[1] is False
-    assert right_mask[1] is True
+    left, right = get_split_mask(X, 0, 3)
+    assert left.tolist() == [True, False, False]
+    assert right.tolist() == [False, True, True]
 
 def test_split():
-    X = np.array([1, 2, 3, 4, 5])
-    y = np.array([10, 20, 30, 40, 50])
-    left, right = split(X, y, 3)
-    assert np.array_equal(left, np.array([10, 20]))
-    assert np.array_equal(right, np.array([30, 40, 50]))
+    X = np.array([1, 5, 2, 8])
+    y = np.array([10, 50, 20, 80])
+    left_y, right_y = split(X, y, 4)
+    assert np.array_equal(left_y, np.array([10, 20]))
+    assert np.array_equal(right_y, np.array([50, 80]))
 
-def test_split_dataset():
-    X = np.array([[1], [5]])
-    target = {"y": np.array([10, 20])}
-    left_X, right_X, left_target, right_target = split_dataset(X, target, 0, 3, return_X=True)
-    assert left_X.shape == (1, 1)
-    assert left_target["y"][0] == 10
-    assert right_target["y"][0] == 20
+def test_split_dataset_with_X():
+    X = np.array([[1], [2], [3]])
+    target = {"y": np.array([10, 20, 30])}
+    left_X, right_X, left_t, right_t = split_dataset(X, target, 0, 2, return_X=True)
     
-    left_only, right_only = split_dataset(X, target, 0, 3, return_X=False)
-    assert "y" in left_only
-    assert left_only["y"][0] == 10
+    assert left_X.shape[0] == 1
+    assert right_X.shape[0] == 2
+    assert left_t["y"][0] == 10
+    assert right_t["y"].shape[0] == 2
+
+def test_split_dataset_no_X():
+    X = np.array([[1], [2], [3]])
+    target = {"y": np.array([10, 20, 30])}
+    left, right = split_dataset(X, target, 0, 2, return_X=False)
+    
+    assert "y" in left
+    assert "y" in right
+    assert len(left["y"]) == 1
+    assert len(right["y"]) == 2

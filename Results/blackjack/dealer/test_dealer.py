@@ -1,17 +1,17 @@
 import sys
-import os
 from unittest.mock import MagicMock
 
-# El problema es que init_standard_deck depende de la clase Card.
-# Al mockear 'numpy', el código corre, pero 'init_standard_deck' falla si no encuentra 'Card'.
-# Debemos asegurar que 'blackjack' esté en el path y que Card sea accesible.
+# Configuramos numpy como mock ANTES de importar los módulos del proyecto
+mock_numpy = MagicMock()
+sys.modules['numpy'] = mock_numpy
 
-sys.path.insert(0, '/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/blackjack')
-sys.modules['numpy'] = MagicMock()
+# Ajustamos el path para asegurar que la estructura sea localizable
+# El directorio base es Public_Proyects, donde blackjack es un paquete
+sys.path.append('/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects')
 
-# Importamos directamente del código fuente
+# Importaciones correctas según la jerarquía del proyecto
 from blackjack import Card
-from dealer import init_standard_deck, BlackjackDealer
+from blackjack.dealer import init_standard_deck, BlackjackDealer
 
 class MockPlayer:
     def __init__(self):
@@ -20,58 +20,52 @@ class MockPlayer:
 def test_init_standard_deck():
     deck = init_standard_deck()
     assert len(deck) == 52
-    assert all(isinstance(card, Card) for card in deck)
+    assert isinstance(deck[0], Card)
+    
+    suits = {card.suit for card in deck}
+    ranks = {card.rank for card in deck}
+    assert suits == {'S', 'H', 'D', 'C'}
+    assert ranks == {'A', '2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K'}
 
-def test_blackjack_dealer_initialization():
-    mock_rng = MagicMock()
-    dealer = BlackjackDealer(mock_rng, num_decks=1)
-    # init_standard_deck() crea 52 cartas, por lo que deck no debe estar vacío
+def test_blackjack_dealer_init():
+    rng = MagicMock()
+    # Para que np.array(self.deck) devuelva algo real en el mock, 
+    # configuramos el mock para retornar la lista inalterada
+    mock_numpy.array = lambda x: x
+    
+    dealer = BlackjackDealer(rng, num_decks=1)
     assert len(dealer.deck) == 52
     assert dealer.status == 'alive'
     assert dealer.score == 0
-    assert mock_rng.shuffle.called
 
 def test_blackjack_dealer_multiple_decks():
-    mock_rng = MagicMock()
-    dealer = BlackjackDealer(mock_rng, num_decks=2)
-    # 52 * 2 = 104
-    assert len(dealer.deck) == 104
+    rng = MagicMock()
+    mock_numpy.array = lambda x: x
+    num_decks = 2
+    dealer = BlackjackDealer(rng, num_decks=num_decks)
+    assert len(dealer.deck) == 52 * num_decks
 
-def test_blackjack_dealer_infinite_decks():
-    mock_rng = MagicMock()
-    dealer = BlackjackDealer(mock_rng, num_decks=0)
-    assert len(dealer.deck) == 52
-
-def test_shuffle():
-    mock_rng = MagicMock()
-    dealer = BlackjackDealer(mock_rng, num_decks=1)
-    initial_deck = list(dealer.deck)
-    dealer.shuffle()
-    assert len(dealer.deck) == 52
-    assert mock_rng.shuffle.called
-
-def test_deal_card_standard():
-    mock_rng = MagicMock()
-    # Mocking choice(n) para devolver un índice válido
-    mock_rng.choice.return_value = 0
+def test_deal_card():
+    rng = MagicMock()
+    mock_numpy.array = lambda x: x
+    rng.choice.return_value = 0
+    dealer = BlackjackDealer(rng, num_decks=1)
+    player = MockPlayer()
     
-    dealer = BlackjackDealer(mock_rng, num_decks=1)
+    initial_len = len(dealer.deck)
+    dealer.deal_card(player)
+    
+    assert len(dealer.deck) == initial_len - 1
+    assert len(player.hand) == 1
+    assert isinstance(player.hand[0], Card)
+
+def test_deal_card_infinite_deck():
+    rng = MagicMock()
+    mock_numpy.array = lambda x: x
+    rng.choice.return_value = 0
+    dealer = BlackjackDealer(rng, num_decks=0)
     player = MockPlayer()
     
     dealer.deal_card(player)
-    
-    assert len(player.hand) == 1
-    assert len(dealer.deck) == 51
-
-def test_deal_card_infinite_decks():
-    mock_rng = MagicMock()
-    mock_rng.choice.return_value = 0
-    
-    dealer = BlackjackDealer(mock_rng, num_decks=0)
-    player = MockPlayer()
-    
-    dealer.deal_card(player)
-    
-    assert len(player.hand) == 1
-    # Con num_decks=0, el código salta el .pop()
     assert len(dealer.deck) == 52
+    assert len(player.hand) == 1

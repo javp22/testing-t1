@@ -1,83 +1,78 @@
 import pytest
-from gin_rummy.action_event import (
+from gin_rummy import Card
+from action_event import (
     ActionEvent, ScoreNorthPlayerAction, ScoreSouthPlayerAction,
     DrawCardAction, PickUpDiscardAction, DeclareDeadHandAction,
-    GinAction, DiscardAction, KnockAction
+    GinAction, DiscardAction, KnockAction,
+    score_player_0_action_id, score_player_1_action_id,
+    draw_card_action_id, pick_up_discard_action_id,
+    declare_dead_hand_action_id, gin_action_id,
+    discard_action_id, knock_action_id
 )
-from gin_rummy import Card
 import utils
 
 def test_action_event_equality():
-    action1 = ActionEvent(1)
-    action2 = ActionEvent(1)
-    action3 = ActionEvent(2)
-    assert action1 == action2
-    assert action1 != action3
-    assert action1 != "not an action"
+    a1 = ActionEvent(10)
+    a2 = ActionEvent(10)
+    a3 = ActionEvent(11)
+    assert a1 == a2
+    assert a1 != a3
+    assert a1 != "not an action"
 
 def test_get_num_actions():
-    assert ActionEvent.get_num_actions() == 110
+    assert ActionEvent.get_num_actions() == knock_action_id + 52
 
-@pytest.mark.parametrize("action_id, expected_type", [
-    (0, ScoreNorthPlayerAction),
-    (1, ScoreSouthPlayerAction),
-    (2, DrawCardAction),
-    (3, PickUpDiscardAction),
-    (4, DeclareDeadHandAction),
-    (5, GinAction),
-])
-def test_decode_action_simple(action_id, expected_type):
-    action = ActionEvent.decode_action(action_id)
-    assert isinstance(action, expected_type)
-    assert action.action_id == action_id
+def test_decode_basic_actions():
+    assert isinstance(ActionEvent.decode_action(score_player_0_action_id), ScoreNorthPlayerAction)
+    assert isinstance(ActionEvent.decode_action(score_player_1_action_id), ScoreSouthPlayerAction)
+    assert isinstance(ActionEvent.decode_action(draw_card_action_id), DrawCardAction)
+    assert isinstance(ActionEvent.decode_action(pick_up_discard_action_id), PickUpDiscardAction)
+    assert isinstance(ActionEvent.decode_action(declare_dead_hand_action_id), DeclareDeadHandAction)
+    assert isinstance(ActionEvent.decode_action(gin_action_id), GinAction)
 
-def test_decode_action_discard():
-    # discard range 6 to 57
-    action_id = 6
-    action = ActionEvent.decode_action(action_id)
-    assert isinstance(action, DiscardAction)
-    assert action.action_id == action_id
-    assert isinstance(action.card, Card)
+def test_decode_discard_knock_actions():
+    card = utils.get_card(card_id=0)
+    
+    # Test Discard
+    discard = ActionEvent.decode_action(discard_action_id)
+    assert isinstance(discard, DiscardAction)
+    assert discard.card == card
+    
+    # Test Knock
+    knock = ActionEvent.decode_action(knock_action_id)
+    assert isinstance(knock, KnockAction)
+    assert knock.card == card
 
-def test_decode_action_knock():
-    # knock range 58 to 109
-    action_id = 58
-    action = ActionEvent.decode_action(action_id)
-    assert isinstance(action, KnockAction)
-    assert action.action_id == action_id
-    assert isinstance(action.card, Card)
-
-def test_decode_action_invalid():
-    with pytest.raises(Exception, match="decode_action: unknown action_id=999"):
+def test_decode_invalid_action_raises():
+    with pytest.raises(Exception, match="unknown action_id=999"):
         ActionEvent.decode_action(999)
 
-def test_action_str_representations():
+def test_action_string_representations():
+    card = utils.get_card(card_id=0)
     assert str(ScoreNorthPlayerAction()) == "score N"
     assert str(ScoreSouthPlayerAction()) == "score S"
     assert str(DrawCardAction()) == "draw_card"
     assert str(PickUpDiscardAction()) == "pick_up_discard"
     assert str(DeclareDeadHandAction()) == "declare_dead_hand"
     assert str(GinAction()) == "gin"
+    assert "discard" in str(DiscardAction(card))
+    assert "knock" in str(KnockAction(card))
 
-def test_card_actions_str():
-    # Mocking behavior via real utils.get_card
-    card = utils.get_card(0)
-    discard = DiscardAction(card=card)
-    knock = KnockAction(card=card)
+def test_discard_knock_initialization():
+    card = utils.get_card(card_id=5)
+    d = DiscardAction(card)
+    k = KnockAction(card)
     
-    assert str(discard) == f"discard {str(card)}"
-    assert str(knock) == f"knock {str(card)}"
+    assert d.action_id == discard_action_id + 5
+    assert k.action_id == knock_action_id + 5
+    assert d.card == card
+    assert k.card == card
 
-def test_discard_action_logic():
-    card = utils.get_card(10)
-    action = DiscardAction(card=card)
-    # discard_action_id (6) + card_id (10) = 16
-    assert action.action_id == 16
-    assert action.card == card
-
-def test_knock_action_logic():
-    card = utils.get_card(5)
-    action = KnockAction(card=card)
-    # knock_action_id (58) + card_id (5) = 63
-    assert action.action_id == 63
-    assert action.card == card
+def test_action_id_ranges():
+    # Test boundaries for discard
+    assert isinstance(ActionEvent.decode_action(discard_action_id), DiscardAction)
+    assert isinstance(ActionEvent.decode_action(discard_action_id + 51), DiscardAction)
+    
+    # Test boundaries for knock
+    assert isinstance(ActionEvent.decode_action(knock_action_id), KnockAction)
+    assert isinstance(ActionEvent.decode_action(knock_action_id + 51), KnockAction)

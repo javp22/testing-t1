@@ -31,14 +31,18 @@ def get_env_with_pythonpath(project_root: str = PROJECT_ROOT) -> dict:
     return env
 
 
-def run_pytest(test_file_path: str, project_root: str = PROJECT_ROOT) -> tuple[bool, str]:
+def run_pytest(
+    test_file_path: str, project_root: str = PROJECT_ROOT
+) -> tuple[bool, str]:
     """Ejecuta pytest sobre el archivo de pruebas y retorna (éxito, logs)."""
     env = get_env_with_pythonpath(project_root)
     abs_test_path = os.path.abspath(test_file_path)
     cmd = [sys.executable, "-m", "pytest", "-q", "--tb=short", abs_test_path]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=project_root, timeout=15)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, env=env, cwd=project_root, timeout=15
+        )
         success = result.returncode == 0
         output = result.stdout + "\n" + result.stderr
         return success, output
@@ -48,7 +52,9 @@ def run_pytest(test_file_path: str, project_root: str = PROJECT_ROOT) -> tuple[b
         return False, f"Error ejecutando pytest: {e}"
 
 
-def measure_coverage(test_file_path: str, target_file_path: str, output_folder: str) -> tuple[float, float, str]:
+def measure_coverage(
+    test_file_path: str, target_file_path: str, output_folder: str
+) -> tuple[float, float, str]:
     """Mide Line Coverage y Branch Coverage usando 'coverage'."""
     abs_output = os.path.abspath(output_folder)
     os.makedirs(abs_output, exist_ok=True)
@@ -62,24 +68,39 @@ def measure_coverage(test_file_path: str, target_file_path: str, output_folder: 
 
     # 1. Ejecutar coverage run acotando al archivo objetivo
     cmd_run = [
-        sys.executable, "-m", "coverage", "run",
+        sys.executable,
+        "-m",
+        "coverage",
+        "run",
         f"--data-file={coverage_file}",
         f"--include={target_abs}",
         "--branch",
-        "-m", "pytest", test_abs
+        "-m",
+        "pytest",
+        test_abs,
     ]
-    res_run = subprocess.run(cmd_run, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=20)
+    res_run = subprocess.run(
+        cmd_run, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=20
+    )
 
     if res_run.returncode != 0:
-        print(f"\n[Coverage Warning] Fallo en 'coverage run':\n{res_run.stdout}\n{res_run.stderr}")
+        print(
+            f"\n[Coverage Warning] Fallo en 'coverage run':\n{res_run.stdout}\n{res_run.stderr}"
+        )
 
     # 2. Generar reporte JSON
     cmd_json = [
-        sys.executable, "-m", "coverage", "json",
+        sys.executable,
+        "-m",
+        "coverage",
+        "json",
         f"--data-file={coverage_file}",
-        "-o", json_report
+        "-o",
+        json_report,
     ]
-    res_json = subprocess.run(cmd_json, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=10)
+    res_json = subprocess.run(
+        cmd_json, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=10
+    )
 
     if res_json.returncode != 0:
         print(f"\n[Coverage Warning] Fallo en 'coverage json':\n{res_json.stderr}")
@@ -97,7 +118,9 @@ def measure_coverage(test_file_path: str, target_file_path: str, output_folder: 
 
             file_stats = None
             for fname, stats in files_data.items():
-                if os.path.abspath(fname) == target_abs or fname.endswith(os.path.basename(target_file_path)):
+                if os.path.abspath(fname) == target_abs or fname.endswith(
+                    os.path.basename(target_file_path)
+                ):
                     file_stats = stats
                     break
 
@@ -108,8 +131,12 @@ def measure_coverage(test_file_path: str, target_file_path: str, output_folder: 
                 num_branches = summary.get("num_branches", 0)
                 covered_branches = summary.get("covered_branches", 0)
 
-                line_cov = covered_statements / num_statements if num_statements > 0 else 1.0
-                branch_cov = covered_branches / num_branches if num_branches > 0 else 1.0
+                line_cov = (
+                    covered_statements / num_statements if num_statements > 0 else 1.0
+                )
+                branch_cov = (
+                    covered_branches / num_branches if num_branches > 0 else 1.0
+                )
 
                 missing_lines = file_stats.get("missing_lines", [])
                 missing_branches = file_stats.get("missing_branches", [])
@@ -129,23 +156,41 @@ def measure_coverage(test_file_path: str, target_file_path: str, output_folder: 
     )
     return line_cov, branch_cov, report_summary
 
-def measure_mutation(test_file_path: str, target_file_path: str, output_folder: str, config_file: str = "cosmic-ray.toml") -> float:
+
+def measure_mutation(
+    test_file_path: str,
+    target_file_path: str,
+    output_folder: str,
+    config_file: str = "cosmic-ray.toml",
+) -> float:
     """
-    Mide Mutation Score utilizando Cosmic Ray con reporte detallado y parseo de respaldo.
+    Mide Mutation Score ejecutando Cosmic Ray y procesando la salida oficial
+    del comando 'cr-rate' vía subprocess.
+
+    Retorna un float entre 0.0 y 1.0 representando los mutantes ELIMINADOS.
+    1.0 (100%) = Todos los mutantes eliminados (óptimo).
+    0.0 (0%)   = Todos los mutantes sobrevivieron.
     """
     abs_output = os.path.abspath(output_folder)
     os.makedirs(abs_output, exist_ok=True)
 
-    # Normalizar rutas con barras inclinadas para compatibilidad con TOML en Windows/Linux
-    rel_target = os.path.relpath(os.path.abspath(target_file_path), PROJECT_ROOT).replace("\\", "/")
-    rel_test = os.path.relpath(os.path.abspath(test_file_path), PROJECT_ROOT).replace("\\", "/")
+    # Normalizar rutas con barras inclinadas (compatibilidad Windows/Linux)
+    python_exec = sys.executable.replace("\\", "/")
+    rel_target = os.path.relpath(
+        os.path.abspath(target_file_path), PROJECT_ROOT
+    ).replace("\\", "/")
+    rel_test = os.path.relpath(os.path.abspath(test_file_path), PROJECT_ROOT).replace(
+        "\\", "/"
+    )
 
     temp_config_path = os.path.join(abs_output, "cosmic-ray-run.toml")
+
+    # Se agrega -x a pytest para abortar la suite en cuanto un test falle contra el mutante
     config_content = f"""[cosmic-ray]
 module-path = "{rel_target}"
 timeout = 3.0
 excluded-modules = []
-test-command = "{sys.executable} -m pytest -q --tb=no {rel_test}"
+test-command = "{python_exec} -m pytest -x -q --tb=no {rel_test}"
 
 [cosmic-ray.distributor]
 name = "local"
@@ -163,74 +208,128 @@ name = "local"
             pass
 
     try:
-        # 1. Inicializar Cosmic Ray (Genera la lista de mutantes)
+        # 1. Inicializar Cosmic Ray
         cmd_init = ["cosmic-ray", "init", temp_config_path, session_db]
-        res_init = subprocess.run(cmd_init, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=15)
+        res_init = subprocess.run(
+            cmd_init,
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=PROJECT_ROOT,
+            timeout=15,
+        )
 
         if res_init.returncode != 0:
-            print(f"[Mutation Warning] Cosmic Ray init falló:\n{res_init.stderr.strip() or res_init.stdout.strip()}")
+            print(
+                f"[Mutation Warning] Cosmic Ray init falló:\n{res_init.stderr.strip() or res_init.stdout.strip()}"
+            )
             return 0.0
 
-        # 2. Ejecutar pruebas contra cada mutante
+        # 2. Ejecutar mutantes
         cmd_exec = ["cosmic-ray", "exec", temp_config_path, session_db]
         try:
-            subprocess.run(cmd_exec, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=50)
+            subprocess.run(
+                cmd_exec,
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=PROJECT_ROOT,
+                timeout=40,
+            )
         except subprocess.TimeoutExpired:
-            print("[Mutation Warning] Tiempo límite alcanzado. Evaluando mutantes procesados...")
+            print(
+                "[Mutation Warning] Tiempo límite alcanzado en 'exec'. Procesando resultados parciales mediante cr-rate..."
+            )
 
-        # 3. Obtener el resumen de resultados
-        cmd_summary = ["cosmic-ray", "summary", session_db]
-        res_summary = subprocess.run(cmd_summary, capture_output=True, text=True, env=env, cwd=PROJECT_ROOT, timeout=10)
-        output = res_summary.stdout + "\n" + res_summary.stderr
+        # 3. Calcular Mutation Score mediante la herramienta oficial 'cr-rate'
+        mutation_score = 0.0
+        survival_rate = 100.0  # Asumimos 100% de supervivencia por defecto
 
-        # Extraer métricas con expresiones regulares
-        killed_match = re.search(r"killed:\s*(\d+)", output, re.IGNORECASE)
-        survived_match = re.search(r"survived:\s*(\d+)", output, re.IGNORECASE)
-        total_match = re.search(r"(?:total jobs|total):\s*(\d+)", output, re.IGNORECASE)
+        if os.path.exists(session_db):
+            cmd_rate = ["cr-rate", session_db]
+            res_rate = subprocess.run(
+                cmd_rate,
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=PROJECT_ROOT,
+                timeout=15,
+            )
 
-        killed = int(killed_match.group(1)) if killed_match else 0
-        survived = int(survived_match.group(1)) if survived_match else 0
-        total = int(total_match.group(1)) if total_match else 0
+            if res_rate.returncode == 0:
+                stdout_text = res_rate.stdout.strip()
 
-        # Respando: Consulta directa a la base de datos SQLite si el parser de texto falla
-        if total == 0 and os.path.exists(session_db):
-            try:
-                import sqlite3
-                conn = sqlite3.connect(session_db)
-                cursor = conn.cursor()
-                
-                cursor.execute("SELECT count(*) FROM work_items")
-                total = cursor.fetchone()[0]
+                # cr-rate reporta habitualmente "Survival rate: X.XX%"
+                match_survival = re.search(
+                    r"Survival rate:\s*([\d\.]+)%", stdout_text, re.IGNORECASE
+                )
 
-                cursor.execute("SELECT count(*) FROM work_items WHERE test_outcome LIKE '%KILLED%' OR worker_outcome LIKE '%NORMAL%' AND test_outcome NOT LIKE '%SURVIVED%'")
-                killed = cursor.fetchone()[0]
+                if match_survival:
+                    survival_rate = float(match_survival.group(1))
+                else:
+                    # Fallback por si cr-rate entrega solo un valor numérico
+                    match_score = re.search(r"([\d\.]+)", stdout_text)
+                    if match_score:
+                        val = float(match_score.group(1))
+                        survival_rate = val * 100.0 if val <= 1.0 else val
 
-                cursor.execute("SELECT count(*) FROM work_items WHERE test_outcome LIKE '%SURVIVED%'")
-                survived = cursor.fetchone()[0]
+                # Convertir Tasa de Supervivencia -> Mutation Score (% Mutantes Eliminados)
+                survival_rate = max(0.0, min(100.0, survival_rate))
+                mutation_score = round((100.0 - survival_rate) / 100.0, 2)
 
-                conn.close()
-            except Exception:
-                pass
-
-        if total == 0:
-            print(f"[Mutation Warning] No se generaron mutantes para '{rel_target}'. Verifica que la ruta apunte a un archivo Python con código ejecutable.")
-            return 0.0
-
-        # Calcular Mutation Score: (Mutantes Eliminados / Total de Mutantes)
-        mutation_score = round(killed / total, 2)
-
-        # Trazabilidad extendida en consola
-        print(f"\n[Mutation Metrics] Resumen para: {rel_target}")
-        print(f" ├─ Mutantes Totales Generados : {total}")
-        print(f" ├─ Mutantes Eliminados (Killed): {killed}")
-        print(f" ├─ Mutantes Sobrevivientes      : {survived}")
-        print(f" └─ Mutation Score Final        : {mutation_score * 100:.1f}% ({killed}/{total})\n")
+                print(f"\n[Mutation Metrics] Resumen para: {rel_target}")
+                print(f" ├─ Salida cr-rate          : {stdout_text}")
+                print(f" ├─ Tasa Supervivencia      : {survival_rate:.1f}% (Mutantes vivos)")
+                print(f" └─ Mutation Score (Killed) : {mutation_score * 100:.1f}% (Mutantes eliminados)\n")
+            else:
+                print(
+                    f"[Mutation Warning] cr-rate no pudo procesar la sesión:\n{res_rate.stderr.strip()}"
+                )
 
         return mutation_score
 
     except FileNotFoundError:
-        print("[Mutation Warning] El comando 'cosmic-ray' no está instalado en el PATH.")
+        print(
+            "[Mutation Warning] 'cosmic-ray' o 'cr-rate' no están disponibles en el PATH."
+        )
     except Exception as e:
-        print(f"[Mutation Warning] Error ejecutando Cosmic Ray: {e}")
+        print(f"[Mutation Warning] Error ejecutando medición de mutación: {e}")
 
     return 0.0
+
+
+def get_surviving_mutants_report(
+    session_db: str, project_root: str = PROJECT_ROOT, max_chars: int = 6000
+) -> str:
+    """
+    Obtiene el detalle (archivo, operador, línea, diff) de los mutantes que
+    sobrevivieron en la última sesión de Cosmic Ray, usando 'cr-report' con
+    --surviving-only y --show-diff. Se usa para pasarle al LLM información
+    concreta de qué atacar (en vez de solo el número de mutation score).
+
+    Se trunca a max_chars para no inflar demasiado el prompt si sobreviven
+    muchos mutantes.
+    """
+    if not os.path.exists(session_db):
+        return ""
+
+    env = get_env_with_pythonpath(project_root)
+    cmd = ["cr-report", "--surviving-only", "--show-diff", session_db]
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, env=env, cwd=project_root, timeout=15
+        )
+        output = result.stdout.strip()
+        if not output:
+            return ""
+
+        if len(output) > max_chars:
+            output = output[:max_chars] + "\n... (truncado)"
+
+        return output
+    except Exception as e:
+        print(
+            f"[Mutation Warning] No se pudo obtener el detalle de mutantes sobrevivientes: {e}"
+        )
+        return ""

@@ -1,88 +1,82 @@
 import pytest
+import sys
+import os
+
+# Asegurar que el directorio del archivo objetivo esté en el path
+sys.path.append('/home/matilab/Testing_IIC3745/testing-t1/Public_Proyects/stock4')
+
 from tableformat import (
-    print_table, TableFormatter, TextTableFormatter, CSVTableFormatter,
-    HTMLTableFormatter, create_formatter
+    print_table, TextTableFormatter, CSVTableFormatter, 
+    HTMLTableFormatter, create_formatter, TableFormatter
 )
 
-class Record:
+class MockRecord:
     def __init__(self, name, price):
         self.name = name
         self.price = price
 
-@pytest.fixture
-def sample_records():
-    return [Record('A', 10), Record('B', 20)]
+class InvalidFormatter:
+    pass
 
-def test_print_table_invalid_formatter():
+def test_print_table_exception():
     with pytest.raises(RuntimeError, match='Expected a TableFormatter'):
-        print_table([], [], object())
+        print_table([], [], InvalidFormatter())
 
-def test_print_table_execution(capsys, sample_records):
+def test_text_table_formatter(capsys):
     formatter = TextTableFormatter()
-    print_table(sample_records, ['name', 'price'], formatter)
+    records = [MockRecord('Apple', 10)]
+    print_table(records, ['name', 'price'], formatter)
     captured = capsys.readouterr()
-    assert 'name' in captured.out
-    assert 'price' in captured.out
-    assert '10' in captured.out
+    assert '      name      price' in captured.out
+    assert '     Apple         10' in captured.out
 
-def test_text_formatter_output(capsys):
-    fmt = TextTableFormatter()
-    fmt.headings(['A', 'B'])
-    fmt.row([1, 2])
+def test_csv_table_formatter(capsys):
+    formatter = CSVTableFormatter()
+    records = [MockRecord('Apple', 10)]
+    print_table(records, ['name', 'price'], formatter)
     captured = capsys.readouterr()
-    assert '         A          B' in captured.out
-    assert '1          2' in captured.out
+    assert 'name,price' in captured.out
+    assert 'Apple,10' in captured.out
 
-def test_csv_formatter_output(capsys):
-    fmt = CSVTableFormatter()
-    fmt.headings(['A', 'B'])
-    fmt.row([1, 2])
+def test_html_table_formatter(capsys):
+    formatter = HTMLTableFormatter()
+    records = [MockRecord('Apple', 10)]
+    print_table(records, ['name', 'price'], formatter)
     captured = capsys.readouterr()
-    assert 'A,B' in captured.out
-    assert '1,2' in captured.out
-
-def test_html_formatter_output(capsys):
-    fmt = HTMLTableFormatter()
-    fmt.headings(['A'])
-    fmt.row([1])
-    captured = capsys.readouterr()
-    assert '<tr> <th>A</th> </tr>' in captured.out
-    assert '<tr> <td>1</td> </tr>' in captured.out
-
-def test_create_formatter_unknown():
-    with pytest.raises(RuntimeError, match='Unknown format'):
-        create_formatter('unknown')
+    assert '<tr> <th>name</th> <th>price</th> </tr>' in captured.out
+    assert '<tr> <td>Apple</td> <td>10</td> </tr>' in captured.out
 
 def test_create_formatter_text():
-    fmt = create_formatter('text')
-    assert isinstance(fmt, TextTableFormatter)
+    f = create_formatter('text')
+    assert isinstance(f, TextTableFormatter)
 
 def test_create_formatter_csv():
-    fmt = create_formatter('csv')
-    assert isinstance(fmt, CSVTableFormatter)
+    f = create_formatter('csv')
+    assert isinstance(f, CSVTableFormatter)
 
 def test_create_formatter_html():
-    fmt = create_formatter('html')
-    assert isinstance(fmt, HTMLTableFormatter)
+    f = create_formatter('html')
+    assert isinstance(f, HTMLTableFormatter)
 
-def test_create_formatter_with_options(capsys, sample_records):
-    # Tests ColumnFormatMixin and UpperHeadersMixin integration
-    fmt = create_formatter(
-        'csv', 
-        column_formats=['%s', '%.2f'], 
-        upper_headers=True
-    )
-    
-    print_table(sample_records, ['name', 'price'], fmt)
+def test_create_formatter_unknown():
+    with pytest.raises(RuntimeError, match='Unknown format unknown'):
+        create_formatter('unknown')
+
+def test_create_formatter_with_mixins(capsys):
+    f = create_formatter('csv', column_formats=['%s', '%.2f'], upper_headers=True)
+    records = [MockRecord('Apple', 10)]
+    print_table(records, ['name', 'price'], f)
     captured = capsys.readouterr()
-    
-    # Verify UpperHeadersMixin
     assert 'NAME,PRICE' in captured.out
-    # Verify ColumnFormatMixin (price formatted to .2f)
-    assert 'A,10.00' in captured.out
-    assert 'B,20.00' in captured.out
+    assert 'Apple,10.00' in captured.out
 
-def test_table_formatter_abstract():
-    # Verify that TableFormatter cannot be instantiated directly
+def test_column_format_mixin_logic(capsys):
+    f = create_formatter('text', column_formats=['%10s', '%10d'])
+    records = [MockRecord('A', 1)]
+    print_table(records, ['name', 'price'], f)
+    captured = capsys.readouterr()
+    assert '         A          1' in captured.out
+
+def test_abstract_class_instantiation():
     with pytest.raises(TypeError):
         TableFormatter()

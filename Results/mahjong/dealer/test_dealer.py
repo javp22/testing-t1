@@ -1,11 +1,14 @@
 import sys
-import os
 import pytest
 from unittest.mock import MagicMock
 
-# Ajuste necesario para localizar el archivo dealer.py dado que el ejecutor 
-# busca en una ruta específica que puede no estar en el PYTHONPATH
-sys.path.append("/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/mahjong")
+# Inyectamos un stub para 'numpy' en sys.modules para evitar el ModuleNotFoundError
+# dado que el código fuente requiere 'utils' y este a su vez requiere 'numpy'.
+# Esto permite que se carguen los módulos originales sin necesidad de instalar numpy.
+sys.modules['numpy'] = MagicMock()
+
+# Ajustar el path para asegurar la importación correcta desde la ubicación del archivo
+sys.path.insert(0, '/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/mahjong')
 
 from dealer import MahjongDealer
 
@@ -14,59 +17,63 @@ class MockPlayer:
         self.hand = []
 
 def test_mahjong_dealer_initialization():
-    # Inicialización con un objeto que soporte el método shuffle
-    np_random = MagicMock()
+    mock_np_random = MagicMock()
+    dealer = MahjongDealer(mock_np_random)
     
-    dealer = MahjongDealer(np_random)
-    
-    # Validaciones según estructura de MahjongDealer
-    assert dealer.deck is not None
-    assert isinstance(dealer.table, list)
-    assert np_random.shuffle.called
+    assert hasattr(dealer, 'deck')
+    assert mock_np_random.shuffle.called
     assert dealer.table == []
 
 def test_shuffle():
-    np_random = MagicMock()
-    dealer = MahjongDealer(np_random)
+    mock_np_random = MagicMock()
+    dealer = MahjongDealer(mock_np_random)
+    initial_deck = list(dealer.deck)
     
-    # El método shuffle delega la operación a np_random.shuffle
     dealer.shuffle()
     
-    # Verificar llamada con el deck actual
-    np_random.shuffle.assert_called_with(dealer.deck)
+    # Verificar que se llamó al método shuffle del mock pasando el deck
+    mock_np_random.shuffle.assert_called_with(dealer.deck)
+    assert len(dealer.deck) == len(initial_deck)
 
 def test_deal_cards_normal():
-    np_random = MagicMock()
-    dealer = MahjongDealer(np_random)
+    mock_np_random = MagicMock()
+    dealer = MahjongDealer(mock_np_random)
     player = MockPlayer()
+    num_cards = 5
+    initial_deck_len = len(dealer.deck)
     
-    initial_count = len(dealer.deck)
-    num_to_deal = 3
+    dealer.deal_cards(player, num_cards)
     
-    dealer.deal_cards(player, num_to_deal)
-    
-    # Verificar que las cartas fueron movidas del deck a la mano del jugador
-    assert len(player.hand) == num_to_deal
-    assert len(dealer.deck) == initial_count - num_to_deal
+    assert len(player.hand) == num_cards
+    assert len(dealer.deck) == initial_deck_len - num_cards
 
-def test_deal_cards_zero():
-    np_random = MagicMock()
-    dealer = MahjongDealer(np_random)
+def test_deal_cards_boundary_zero():
+    mock_np_random = MagicMock()
+    dealer = MahjongDealer(mock_np_random)
     player = MockPlayer()
     
-    initial_count = len(dealer.deck)
     dealer.deal_cards(player, 0)
     
-    # No debe haber cambios
     assert len(player.hand) == 0
-    assert len(dealer.deck) == initial_count
 
-def test_deal_cards_index_error():
-    np_random = MagicMock()
-    dealer = MahjongDealer(np_random)
+def test_deal_cards_exception_empty_deck():
+    mock_np_random = MagicMock()
+    dealer = MahjongDealer(mock_np_random)
+    # Vaciar el deck para forzar el IndexError en el pop() interno
+    dealer.deck = []
     player = MockPlayer()
     
-    # Intentar sacar más cartas de las existentes disparará IndexError en pop()
-    total_cards = len(dealer.deck)
     with pytest.raises(IndexError):
-        dealer.deal_cards(player, total_cards + 1)
+        dealer.deal_cards(player, 1)
+
+def test_deal_cards_integrity():
+    mock_np_random = MagicMock()
+    dealer = MahjongDealer(mock_np_random)
+    player = MockPlayer()
+    
+    # Guardar referencia al elemento que se espera extraer (el último)
+    target_card = dealer.deck[-1]
+    
+    dealer.deal_cards(player, 1)
+    
+    assert player.hand[0] == target_card
