@@ -2,22 +2,20 @@ import sys
 import os
 import pytest
 
-# Asegurar que el path incluya el directorio del archivo objetivo
-sys.path.append('/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/mahjong')
+# Ajustar el path para asegurar que el módulo player sea encontrado
+sys.path.append('/home/matilab/Testing_IIC3745/testing-t1/Public_Proyects/mahjong')
 
 from player import MahjongPlayer
 
 class MockCard:
-    def __init__(self, name):
-        self.name = name
-
+    def __init__(self, value):
+        self.value = value
     def get_str(self):
-        return self.name
-
+        return str(self.value)
     def __eq__(self, other):
         if not isinstance(other, MockCard):
             return False
-        return self.name == other.name
+        return self.value == other.value
 
 class MockDealer:
     def __init__(self):
@@ -32,76 +30,83 @@ def test_init(player):
     assert player.hand == []
     assert player.pile == []
 
-def test_print_hand(player, capsys):
-    player.hand = [MockCard("1m")]
-    player.print_hand()
-    captured = capsys.readouterr()
-    assert captured.out.strip() == "['1m']"
-
-def test_print_pile(player, capsys):
-    player.pile = [[MockCard("1m"), MockCard("2m")]]
-    player.print_pile()
-    captured = capsys.readouterr()
-    assert captured.out.strip() == "[['1m', '2m']]"
-
 def test_play_card(player):
     dealer = MockDealer()
-    card = MockCard("1m")
-    player.hand = [card, MockCard("2m")]
+    card1 = MockCard(1)
+    card2 = MockCard(2)
+    player.hand = [card1, card2]
     
-    player.play_card(dealer, card)
+    player.play_card(dealer, card1)
     
-    assert card not in player.hand
-    assert len(player.hand) == 1
-    assert dealer.table == [card]
+    assert card1 not in player.hand
+    assert card2 in player.hand
+    assert dealer.table == [card1]
 
 def test_play_card_value_error(player):
     dealer = MockDealer()
+    card1 = MockCard(1)
+    # Al intentar hacer .index() de una carta que no está en la mano, 
+    # la lista de Python lanza ValueError
     with pytest.raises(ValueError):
-        player.play_card(dealer, MockCard("NonExistent"))
+        player.play_card(dealer, card1)
 
 def test_chow(player):
     dealer = MockDealer()
-    dealer.table = [MockCard("4m"), MockCard("5m")] # last is 5m
-    cards = [MockCard("2m"), MockCard("3m")]
-    player.hand = [MockCard("2m"), MockCard("3m"), MockCard("9m")]
+    c_last = MockCard(10)
+    c1 = MockCard(1)
+    c2 = MockCard(2)
+    dealer.table = [c_last]
+    player.hand = [c1, c2]
     
-    player.chow(dealer, cards)
+    player.chow(dealer, [c1, c2])
     
-    assert MockCard("9m") in player.hand
-    assert len(player.hand) == 1
-    assert player.pile == [cards]
-    assert dealer.table == [MockCard("4m")]
+    # dealer.table.pop(-1) remueve c_last
+    assert len(dealer.table) == 0
+    assert player.pile == [[c1, c2]]
+    assert c1 not in player.hand
+    assert c2 not in player.hand
 
 def test_gong(player):
     dealer = MockDealer()
-    cards = [MockCard("1m"), MockCard("1m"), MockCard("1m")]
-    player.hand = [MockCard("1m"), MockCard("1m"), MockCard("1m"), MockCard("2m")]
+    c1, c2, c3, c4 = MockCard(1), MockCard(1), MockCard(1), MockCard(1)
+    player.hand = [c1, c2, c3, c4]
     
-    player.gong(dealer, cards)
+    player.gong(dealer, [c1, c2, c3, c4])
     
-    assert MockCard("2m") in player.hand
-    assert player.pile == [cards]
+    assert player.pile == [[c1, c2, c3, c4]]
+    assert len(player.hand) == 0
 
 def test_pong(player):
     dealer = MockDealer()
-    cards = [MockCard("5s"), MockCard("5s")]
-    player.hand = [MockCard("5s"), MockCard("5s"), MockCard("8z")]
+    c1, c2, c3 = MockCard(5), MockCard(5), MockCard(5)
+    player.hand = [c1, c2, c3]
     
-    player.pong(dealer, cards)
+    player.pong(dealer, [c1, c2, c3])
     
-    assert MockCard("8z") in player.hand
-    assert player.pile == [cards]
+    assert player.pile == [[c1, c2, c3]]
+    assert len(player.hand) == 0
+
+def test_print_hand(player, capsys):
+    player.hand = [MockCard(1)]
+    player.print_hand()
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "['1']"
+
+def test_print_pile(player, capsys):
+    player.pile = [[MockCard(1), MockCard(2)]]
+    player.print_pile()
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "[['1', '2']]"
 
 def test_chow_logic_branch(player):
-    # Prueba rama if card != last_card
     dealer = MockDealer()
-    dealer.table = [MockCard("1m")] # last_card
-    # Intentar hacer chow con la carta que está en la mesa (debería fallar al añadir a mano)
-    cards = [MockCard("1m"), MockCard("2m")]
-    player.hand = [MockCard("2m")]
-    
-    player.chow(dealer, cards)
-    
-    assert player.pile == [cards]
-    assert player.hand == []
+    # last_card es la carta que se retira del dealer
+    dealer.table = [MockCard(10)]
+    c1 = MockCard(1)
+    # Se intenta Chow con c1 y la misma carta del dealer (10)
+    # El código debe ignorar c1 == last_card si se diera el caso,
+    # pero aquí probamos la lógica de filtrado del if
+    player.hand = [c1]
+    player.chow(dealer, [c1, MockCard(10)])
+    assert player.pile == [[c1, MockCard(10)]]
+    assert c1 not in player.hand

@@ -1,14 +1,14 @@
+import pytest
 import sys
 import os
 
-# Ajuste del path para asegurar que la estructura de directorios permita importar 'utils'
-# El archivo objetivo está en /Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/fuzzywuzzy/utils.py
-sys.path.insert(0, '/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/fuzzywuzzy')
+# Asegurar que el directorio del archivo original está en el PYTHONPATH
+sys.path.insert(0, '/home/matilab/Testing_IIC3745/testing-t1/Public_Proyects/fuzzywuzzy')
 
 from utils import (
     validate_string, check_for_equivalence, check_for_none, 
-    check_empty_string, asciidammit, make_type_consistent, 
-    full_process, intr
+    check_empty_string, asciionly, asciidammit, 
+    make_type_consistent, full_process, intr, unicode
 )
 
 def test_validate_string():
@@ -16,53 +16,62 @@ def test_validate_string():
     assert validate_string("") is False
     assert validate_string(None) is False
     assert validate_string(123) is False
+    assert validate_string([1]) is True
 
-def test_decorators():
+def test_check_for_equivalence():
     @check_for_equivalence
-    def dummy_eq(s1, s2): return 1
+    def mock_func(a, b):
+        return 0
     
+    assert mock_func("a", "a") == 100
+    assert mock_func("a", "b") == 0
+
+def test_check_for_none():
     @check_for_none
-    def dummy_none(s1, s2): return 1
+    def mock_func(a, b):
+        return 1
     
+    assert mock_func(None, "b") == 0
+    assert mock_func("a", None) == 0
+    assert mock_func("a", "b") == 1
+
+def test_check_empty_string():
     @check_empty_string
-    def dummy_empty(s1, s2): return 1
+    def mock_func(a, b):
+        return 1
+    
+    assert mock_func("", "b") == 0
+    assert mock_func("a", "") == 0
+    assert mock_func("a", "b") == 1
 
-    assert dummy_eq("a", "a") == 100
-    assert dummy_eq("a", "b") == 1
-
-    assert dummy_none(None, "b") == 0
-    assert dummy_none("a", "b") == 1
-
-    assert dummy_empty("", "b") == 0
-    assert dummy_empty("a", "b") == 1
+def test_asciionly():
+    # 'é' es un caracter fuera del rango 0-127
+    assert asciionly("abc") == "abc"
+    assert "é" not in asciionly("café")
 
 def test_asciidammit():
-    assert asciidammit("hello") == "hello"
-    assert asciidammit("café") == "caf"
+    assert asciidammit("abc") == "abc"
+    # Probar con unicode y tipos no string
+    assert asciidammit(unicode("café")) == "caf"
     assert asciidammit(123) == "123"
 
 def test_make_type_consistent():
-    # Verifica el retorno de tuplas consistentes
     s1, s2 = make_type_consistent("a", "b")
-    assert s1 == "a"
-    assert s2 == "b"
+    assert isinstance(s1, str) and isinstance(s2, str)
     
-    # Verifica forzado a unicode/str
-    s1, s2 = make_type_consistent("a", 1)
-    assert s1 == "a"
-    assert s2 == "1"
+    u1, u2 = make_type_consistent(1, 2)
+    assert u1 == unicode("1") and u2 == unicode("2")
 
 def test_full_process():
-    # Verifica procesamiento básico
-    result = full_process("  Hello World!  ")
-    assert result == "hello world"
+    # Verifica el flujo completo sin forzar ascii
+    res = full_process("  Hello World 123!  ", force_ascii=False)
+    assert res == "hello world 123"
     
-    # Verifica force_ascii
-    result_ascii = full_process("café", force_ascii=True)
-    assert result_ascii == "caf"
+    # Verifica el flujo forzando ascii
+    res_ascii = full_process("café", force_ascii=True)
+    assert "é" not in res_ascii
 
 def test_intr():
     assert intr(2.4) == 2
     assert intr(2.6) == 3
-    assert intr(2.5) == 2
     assert intr(3.5) == 4

@@ -1,78 +1,77 @@
+import sys
 import pytest
+from unittest.mock import MagicMock
+
+# Ajustar path para importar game.py
+sys.path.append('/home/matilab/Testing_IIC3745/testing-t1/Public_Proyects/mahjong')
+
+# Mock de dependencias externas que causan errores de importación
+sys.modules["numpy"] = MagicMock()
+sys.modules["numpy.random"] = MagicMock()
+sys.modules["mahjong"] = MagicMock()
+
 from game import MahjongGame
 
-def test_initialization():
-    game = MahjongGame(allow_step_back=True)
-    assert game.allow_step_back is True
-    assert game.num_players == 4
+def test_init_game():
+    game = MahjongGame()
+    game.init_game()
+    assert hasattr(game, 'dealer')
+    assert hasattr(game, 'players')
+    assert hasattr(game, 'round')
+    assert isinstance(game.players, list)
+
+def test_get_num_actions():
+    assert MahjongGame.get_num_actions() == 38
+
+def test_get_num_players():
+    game = MahjongGame()
     assert game.get_num_players() == 4
-    assert game.get_num_actions() == 38
 
-def test_init_game_state():
-    game = MahjongGame()
-    state, player_id = game.init_game()
-    assert isinstance(state, dict)
-    assert player_id == game.get_player_id()
-    assert game.cur_state == state
-
-def test_step_logic():
-    game = MahjongGame(allow_step_back=True)
-    game.init_game()
-    initial_player = game.get_player_id()
-    
-    # Executing a step
-    state, next_player = game.step("some_action")
-    
-    assert state == game.cur_state
-    assert len(game.history) == 1
-    assert next_player != initial_player or next_player == initial_player
-
-def test_step_back_functionality():
-    game = MahjongGame(allow_step_back=True)
-    game.init_game()
-    
-    # Should be false initially as history is empty
-    assert game.step_back() is False
-    
-    game.step("action1")
-    assert len(game.history) == 1
-    
-    # Return to previous state
-    assert game.step_back() is True
-    assert len(game.history) == 0
-
-def test_step_without_allow_step_back():
-    game = MahjongGame(allow_step_back=False)
-    game.init_game()
-    game.step("action1")
-    # History should remain empty
-    assert len(game.history) == 0
-
-def test_get_legal_actions_logic():
-    # Case: valid_act is ['play']
-    state_play = {'valid_act': ['play'], 'action_cards': ['card1', 'card2']}
-    actions = MahjongGame.get_legal_actions(state_play)
-    assert actions == ['card1', 'card2']
-    assert state_play['valid_act'] == ['card1', 'card2']
-    
-    # Case: valid_act is something else
-    state_other = {'valid_act': ['call', 'fold']}
-    actions = MahjongGame.get_legal_actions(state_other)
-    assert actions == ['call', 'fold']
-
-def test_is_over_structure():
+def test_get_player_id():
     game = MahjongGame()
     game.init_game()
-    # The method depends on judger.judge_game(self)
-    # We test that it returns a boolean as expected by the implementation
+    # Accedemos a la propiedad existente a través del objeto round
+    assert game.get_player_id() == game.round.current_player
+
+def test_step():
+    game = MahjongGame(allow_step_back=True)
+    game.init_game()
+    # Definimos explícitamente el atributo necesario para deepcopy en step
+    game.dealer = MagicMock()
+    game.round = MagicMock()
+    game.players = []
+    game.history = []
+    
+    # Mockeamos el método interno proceed_round y get_state
+    game.round.proceed_round = MagicMock()
+    game.round.current_player = 0
+    game.get_state = MagicMock(return_value={})
+    
+    state, player = game.step('play')
+    assert state == {}
+    assert len(game.history) == 1
+
+def test_step_back():
+    game = MahjongGame(allow_step_back=True)
+    game.history = [("d1", "p1", "r1")]
+    
+    result = game.step_back()
+    assert result is True
+    assert len(game.history) == 0
+
+def test_get_legal_actions():
+    state = {'valid_act': ['play'], 'action_cards': ['1m', '2m']}
+    assert MahjongGame.get_legal_actions(state) == ['1m', '2m']
+    
+    state_other = {'valid_act': ['call']}
+    assert MahjongGame.get_legal_actions(state_other) == ['call']
+
+def test_is_over():
+    game = MahjongGame()
+    game.judger = MagicMock()
+    # Retorna win, player, _
+    game.judger.judge_game.return_value = (True, 3, None)
+    
     result = game.is_over()
-    assert isinstance(result, bool)
-    assert hasattr(game, 'winner')
-
-def test_get_state_consistency():
-    game = MahjongGame()
-    game.init_game()
-    p_id = game.get_player_id()
-    state = game.get_state(p_id)
-    assert isinstance(state, dict)
-    assert state == game.get_state(p_id)
+    assert result is True
+    assert game.winner == 3

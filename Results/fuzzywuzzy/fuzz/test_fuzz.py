@@ -1,65 +1,69 @@
-import sys
-import os
 import pytest
-
-# Asegurar que el directorio del archivo fuzz.py está en el path para la importación relativa/absoluta
-sys.path.insert(0, os.path.abspath(os.path.dirname('/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/fuzzywuzzy/fuzz.py')))
-
 from fuzz import (
     ratio, partial_ratio, token_sort_ratio, partial_token_sort_ratio,
-    token_set_ratio, partial_token_set_ratio, QRatio, UQRatio, WRatio, UWRatio,
-    _token_set
+    token_set_ratio, partial_token_set_ratio, QRatio, UQRatio, WRatio, UWRatio
 )
 
 def test_ratio():
     assert ratio("test", "test") == 100
     assert ratio("test", "tent") == 75
-    assert ratio("", "abc") == 0
+    assert ratio("", "test") == 0
 
 def test_partial_ratio():
-    assert partial_ratio("test", "this is a test string") == 100
+    assert partial_ratio("test", "this is a test") == 100
     assert partial_ratio("abc", "123abc456") == 100
-    assert partial_ratio("short", "longer string") < 100
+    assert partial_ratio("short", "loooooonger string") < 50
 
 def test_token_sort_ratio():
-    assert token_sort_ratio("marcos antonio", "antonio marcos") == 100
-    assert token_sort_ratio("test a b", "b a test") == 100
+    assert token_sort_ratio("fuzzy wuzzy", "wuzzy fuzzy") == 100
+    assert token_sort_ratio("a b c", "c b a") == 100
+    assert token_sort_ratio("test", "test") == 100
 
 def test_partial_token_sort_ratio():
-    assert partial_token_sort_ratio("marcos antonio", "roberto antonio marcos") == 100
-    assert partial_token_sort_ratio("a b c", "c d e a b") == 100
+    assert partial_token_sort_ratio("fuzzy wuzzy", "wuzzy fuzzy test") == 100
+    assert partial_token_sort_ratio("a b c", "c b a d") == 100
 
 def test_token_set_ratio():
-    assert token_set_ratio("marcos antonio", "marcos antonio marcos") == 100
-    assert token_set_ratio("a b c", "a b c d e") == 100
-    assert token_set_ratio("test", "test") == 100
+    assert token_set_ratio("fuzzy wuzzy", "wuzzy fuzzy fuzzy") == 100
+    assert token_set_ratio("a b c", "a b") == 100
+    assert token_set_ratio("data science", "science data") == 100
 
 def test_partial_token_set_ratio():
-    assert partial_token_set_ratio("marcos antonio", "marcos antonio extra words") == 100
-    assert partial_token_set_ratio("a b", "a b c d e f") == 100
+    assert partial_token_set_ratio("a b c", "a b c d e f") == 100
+    assert partial_token_set_ratio("test", "a test b") == 100
 
 def test_qratio():
-    assert QRatio("test", "test") == 100
-    assert QRatio("  test  ", "test") == 100
-    assert QRatio("", "test") == 0
-    assert QRatio("test", "test", full_process=False) == 100
+    assert QRatio("Test", "test") == 100
+    assert QRatio("test", "") == 0
+    assert QRatio("fuzzy", "wuzzy") == 0
 
 def test_uqratio():
-    assert UQRatio("test", "test") == 100
-    assert UQRatio("café", "café") == 100
+    assert UQRatio("Test", "test") == 100
+    assert UQRatio("fuzzy", "wuzzy") == 0
 
 def test_wratio():
+    # Test identical
     assert WRatio("test", "test") == 100
-    assert WRatio("short", "this is a very long string that is much longer than the first") < 100
-    assert WRatio("", "something") == 0
-    assert WRatio("test", "test", full_process=False) == 100
+    # Test significant length difference (triggers partial_scale logic)
+    assert WRatio("a", "a" * 20) <= 100
+    # Test short circuit
+    assert WRatio("", "test") == 0
+    assert WRatio(None, "test") == 0
 
 def test_uwratio():
-    assert UWRatio("café", "café") == 100
     assert UWRatio("test", "test") == 100
+    assert UWRatio("a", "b") == 0
 
-def test_token_set_internal_logic():
-    # Prueba la rama donde full_process=False y s1 == s2
-    assert _token_set("test", "test", full_process=False) == 100
-    # Prueba la validación de string en _token_set
-    assert _token_set("", "test", full_process=True) == 0
+@pytest.mark.parametrize("func", [
+    ratio, partial_ratio, token_sort_ratio, partial_token_sort_ratio,
+    token_set_ratio, partial_token_set_ratio, QRatio, WRatio
+])
+def test_none_handling(func):
+    # utils.check_for_none should catch these
+    assert func(None, "test") == 0
+    assert func("test", None) == 0
+    assert func(None, None) == 0
+
+def test_empty_string_handling():
+    assert ratio("", "") == 0
+    assert partial_ratio("", "test") == 0

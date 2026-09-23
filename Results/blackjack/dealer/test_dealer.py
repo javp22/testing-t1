@@ -1,77 +1,72 @@
 import sys
-import os
 from unittest.mock import MagicMock
 
-# El problema es que init_standard_deck depende de la clase Card.
-# Al mockear 'numpy', el código corre, pero 'init_standard_deck' falla si no encuentra 'Card'.
-# Debemos asegurar que 'blackjack' esté en el path y que Card sea accesible.
+# Como numpy no está disponible, creamos un mock que simule el comportamiento de
+# np.array() para que al convertir la lista a array y luego a lista no se pierda el contenido.
+class MockNp:
+    def array(self, obj):
+        return list(obj)
 
-sys.path.insert(0, '/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/blackjack')
-sys.modules['numpy'] = MagicMock()
+sys.modules['numpy'] = MockNp()
 
-# Importamos directamente del código fuente
+import pytest
+from blackjack.dealer import init_standard_deck, BlackjackDealer
 from blackjack import Card
-from dealer import init_standard_deck, BlackjackDealer
 
 class MockPlayer:
     def __init__(self):
         self.hand = []
 
+@pytest.fixture
+def rng():
+    # El código fuente original realiza:
+    # 1. self.np_random.shuffle(shuffle_deck)
+    # 2. idx = self.np_random.choice(len(self.deck))
+    m = MagicMock()
+    # Para shuffle, el mock no hace nada, lo cual es correcto pues la lista se modifica in-place
+    # Para choice, devolvemos un índice válido.
+    m.choice.return_value = 0
+    return m
+
 def test_init_standard_deck():
     deck = init_standard_deck()
     assert len(deck) == 52
-    assert all(isinstance(card, Card) for card in deck)
+    assert all(isinstance(c, Card) for c in deck)
+    suits = {c.suit for c in deck}
+    ranks = {c.rank for c in deck}
+    assert len(suits) == 4
+    assert len(ranks) == 13
 
-def test_blackjack_dealer_initialization():
-    mock_rng = MagicMock()
-    dealer = BlackjackDealer(mock_rng, num_decks=1)
-    # init_standard_deck() crea 52 cartas, por lo que deck no debe estar vacío
-    assert len(dealer.deck) == 52
-    assert dealer.status == 'alive'
-    assert dealer.score == 0
-    assert mock_rng.shuffle.called
+def test_dealer_initialization(rng):
+    d = BlackjackDealer(rng, num_decks=1)
+    assert len(d.deck) == 52
+    assert d.status == 'alive'
+    assert d.score == 0
 
-def test_blackjack_dealer_multiple_decks():
-    mock_rng = MagicMock()
-    dealer = BlackjackDealer(mock_rng, num_decks=2)
-    # 52 * 2 = 104
-    assert len(dealer.deck) == 104
+def test_dealer_multiple_decks(rng):
+    d = BlackjackDealer(rng, num_decks=3)
+    assert len(d.deck) == 52 * 3
 
-def test_blackjack_dealer_infinite_decks():
-    mock_rng = MagicMock()
-    dealer = BlackjackDealer(mock_rng, num_decks=0)
-    assert len(dealer.deck) == 52
+def test_dealer_infinite_decks(rng):
+    d = BlackjackDealer(rng, num_decks=0)
+    assert len(d.deck) == 52
 
-def test_shuffle():
-    mock_rng = MagicMock()
-    dealer = BlackjackDealer(mock_rng, num_decks=1)
-    initial_deck = list(dealer.deck)
-    dealer.shuffle()
-    assert len(dealer.deck) == 52
-    assert mock_rng.shuffle.called
+def test_shuffle(rng):
+    d = BlackjackDealer(rng, num_decks=1)
+    d.shuffle()
+    assert rng.shuffle.called
+    assert len(d.deck) == 52
 
-def test_deal_card_standard():
-    mock_rng = MagicMock()
-    # Mocking choice(n) para devolver un índice válido
-    mock_rng.choice.return_value = 0
-    
-    dealer = BlackjackDealer(mock_rng, num_decks=1)
-    player = MockPlayer()
-    
-    dealer.deal_card(player)
-    
-    assert len(player.hand) == 1
-    assert len(dealer.deck) == 51
+def test_deal_card_removes_from_deck(rng):
+    d = BlackjackDealer(rng, num_decks=1)
+    p = MockPlayer()
+    d.deal_card(p)
+    assert len(d.deck) == 51
+    assert len(p.hand) == 1
 
-def test_deal_card_infinite_decks():
-    mock_rng = MagicMock()
-    mock_rng.choice.return_value = 0
-    
-    dealer = BlackjackDealer(mock_rng, num_decks=0)
-    player = MockPlayer()
-    
-    dealer.deal_card(player)
-    
-    assert len(player.hand) == 1
-    # Con num_decks=0, el código salta el .pop()
-    assert len(dealer.deck) == 52
+def test_deal_card_infinite_no_remove(rng):
+    d = BlackjackDealer(rng, num_decks=0)
+    p = MockPlayer()
+    d.deal_card(p)
+    assert len(d.deck) == 52
+    assert len(p.hand) == 1

@@ -166,6 +166,10 @@ def measure_mutation(
     """
     Mide Mutation Score ejecutando Cosmic Ray y procesando la salida oficial
     del comando 'cr-rate' vía subprocess.
+
+    Retorna un float entre 0.0 y 1.0 representando los mutantes ELIMINADOS.
+    1.0 (100%) = Todos los mutantes eliminados (óptimo).
+    0.0 (0%)   = Todos los mutantes sobrevivieron.
     """
     abs_output = os.path.abspath(output_folder)
     os.makedirs(abs_output, exist_ok=True)
@@ -239,6 +243,8 @@ name = "local"
 
         # 3. Calcular Mutation Score mediante la herramienta oficial 'cr-rate'
         mutation_score = 0.0
+        survival_rate = 100.0  # Asumimos 100% de supervivencia por defecto
+
         if os.path.exists(session_db):
             cmd_rate = ["cr-rate", session_db]
             res_rate = subprocess.run(
@@ -253,25 +259,28 @@ name = "local"
             if res_rate.returncode == 0:
                 stdout_text = res_rate.stdout.strip()
 
-                # cr-rate reporta habitualmente el "Survival rate: X.XX%"
+                # cr-rate reporta habitualmente "Survival rate: X.XX%"
                 match_survival = re.search(
                     r"Survival rate:\s*([\d\.]+)%", stdout_text, re.IGNORECASE
                 )
 
                 if match_survival:
                     survival_rate = float(match_survival.group(1))
-                    # Mutation score (porcentaje de mutantes eliminados) = 100% - Survival rate
-                    mutation_score = round(max(0.0, (100.0 - survival_rate) / 100.0), 2)
                 else:
-                    # Búsqueda fallback por si la salida reporta un score directo o flotante
+                    # Fallback por si cr-rate entrega solo un valor numérico
                     match_score = re.search(r"([\d\.]+)", stdout_text)
                     if match_score:
                         val = float(match_score.group(1))
-                        mutation_score = round(val / 100.0 if val > 1.0 else val, 2)
+                        survival_rate = val * 100.0 if val <= 1.0 else val
+
+                # Convertir Tasa de Supervivencia -> Mutation Score (% Mutantes Eliminados)
+                survival_rate = max(0.0, min(100.0, survival_rate))
+                mutation_score = round((100.0 - survival_rate) / 100.0, 2)
 
                 print(f"\n[Mutation Metrics] Resumen para: {rel_target}")
-                print(f" ├─ Salida cr-rate      : {stdout_text}")
-                print(f" └─ Mutation Score Final: {mutation_score * 100:.1f}%\n")
+                print(f" ├─ Salida cr-rate          : {stdout_text}")
+                print(f" ├─ Tasa Supervivencia      : {survival_rate:.1f}% (Mutantes vivos)")
+                print(f" └─ Mutation Score (Killed) : {mutation_score * 100:.1f}% (Mutantes eliminados)\n")
             else:
                 print(
                     f"[Mutation Warning] cr-rate no pudo procesar la sesión:\n{res_rate.stderr.strip()}"

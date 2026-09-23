@@ -1,47 +1,70 @@
 import sys
 import pytest
 
-# Ajuste necesario para importar el módulo desde la ruta especificada
-sys.path.append('/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/fuzzywuzzy')
+# Asegurar que el directorio del archivo fuente esté en el sys.path para permitir la importación
+sys.path.append('/home/matilab/Testing_IIC3745/testing-t1/Public_Proyects/fuzzywuzzy')
 
 from string_processing import StringProcessor
 
 class TestStringProcessor:
 
     def test_replace_non_letters_non_numbers_with_whitespace(self):
-        # El método regex.sub(" ", a_string) reemplaza cada caracter no alfanumérico individualmente
-        input_str = "abc!!!def"
-        expected = "abc   def"
-        assert StringProcessor.replace_non_letters_non_numbers_with_whitespace(input_str) == expected
+        # El regex (?ui)\W reemplaza cualquier carácter que no sea word (alfanumérico + underscore)
+        input_str = "hello-world_123!?"
+        # "-" y "!" y "?" son \W. "_" es \w.
+        # "hello" + " " + "world_123" + "  "
+        result = StringProcessor.replace_non_letters_non_numbers_with_whitespace(input_str)
+        assert result == "hello world_123  "
 
-        assert StringProcessor.replace_non_letters_non_numbers_with_whitespace("a-b") == "a b"
+        # Caso borde: cadena vacía
         assert StringProcessor.replace_non_letters_non_numbers_with_whitespace("") == ""
-        assert StringProcessor.replace_non_letters_non_numbers_with_whitespace("123") == "123"
+
+        # Caso borde: solo caracteres \W
+        assert StringProcessor.replace_non_letters_non_numbers_with_whitespace("!!!") == "   "
+
+        # Caso borde: solo caracteres alfanuméricos
+        input_str = "abc123ABC"
+        assert StringProcessor.replace_non_letters_non_numbers_with_whitespace(input_str) == "abc123ABC"
 
     def test_strip(self):
-        assert StringProcessor.strip("  abc  ") == "abc"
-        assert StringProcessor.strip("abc") == "abc"
-        assert StringProcessor.strip("  ") == ""
+        # Caso normal: espacios al inicio y final
+        assert StringProcessor.strip("  hello  ") == "hello"
+        
+        # Caso borde: cadena vacía
+        assert StringProcessor.strip("   ") == ""
+        
+        # Caso borde: sin espacios
+        assert StringProcessor.strip("hello") == "hello"
 
     def test_to_lower_case(self):
-        assert StringProcessor.to_lower_case("ABC") == "abc"
-        assert StringProcessor.to_lower_case("AbC123") == "abc123"
+        # Caso normal: mezcla de mayúsculas
+        assert StringProcessor.to_lower_case("HELLO world") == "hello world"
+        
+        # Caso borde: ya en minúsculas
+        assert StringProcessor.to_lower_case("abc") == "abc"
+        
+        # Caso borde: cadena vacía
         assert StringProcessor.to_lower_case("") == ""
 
     def test_to_upper_case(self):
-        assert StringProcessor.to_upper_case("abc") == "ABC"
-        assert StringProcessor.to_upper_case("aBc123") == "ABC123"
+        # Caso normal: mezcla de minúsculas
+        assert StringProcessor.to_upper_case("hello WORLD") == "HELLO WORLD"
+        
+        # Caso borde: ya en mayúsculas
+        assert StringProcessor.to_upper_case("ABC") == "ABC"
+        
+        # Caso borde: cadena vacía
         assert StringProcessor.to_upper_case("") == ""
 
-    def test_type_errors(self):
-        # En Python 3, str.lower/upper/strip sobre un entero eleva TypeError
-        # porque son métodos descriptores de la clase str.
+    def test_invalid_input_types(self):
+        # Validación de comportamiento ante tipos incorrectos
+        # En Python, llamar str.strip(None) levanta TypeError y no AttributeError
+        with pytest.raises(TypeError):
+            StringProcessor.strip(None)
+            
         with pytest.raises(TypeError):
             StringProcessor.to_lower_case(123)
-        
-        with pytest.raises(AttributeError):
-            StringProcessor.strip(None)
-
-        # La expresión regular en sub espera un string, pasar None lanza un TypeError
+            
         with pytest.raises(TypeError):
+            # re.sub espera un string, enviar None causa TypeError
             StringProcessor.replace_non_letters_non_numbers_with_whitespace(None)

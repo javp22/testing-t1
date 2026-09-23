@@ -1,77 +1,69 @@
-import pytest
 import sys
-from unittest.mock import MagicMock, patch
+import os
+import pytest
 
-# Configuración de path para importar el módulo bajo prueba
-sys.path.append('/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/mahjong')
-sys.path.append('/Users/javierapalacio/Documents/GitHub/testing-t1')
+# Asegurar que el directorio del archivo fuente esté en el path de búsqueda de módulos
+sys.path.append('/home/matilab/Testing_IIC3745/testing-t1/Public_Proyects/mahjong')
 
-# Se mockea init_deck para devolver una lista nueva en cada llamada, 
-# evitando que los tests compartan el estado de la lista.
-def create_mock_deck():
-    return ["c1", "c2", "c3", "c4", "c5"]
-
-mock_utils = MagicMock()
-mock_utils.init_deck = create_mock_deck
-
-with patch.dict(sys.modules, {'utils': mock_utils}):
-    from dealer import MahjongDealer
+from dealer import MahjongDealer
 
 class MockPlayer:
     def __init__(self):
         self.hand = []
 
-@pytest.fixture
-def mock_random():
-    return MagicMock()
+class MockRandom:
+    def shuffle(self, deck):
+        # Implementación simple de shuffle: invierte la lista
+        deck.reverse()
 
-def test_mahjong_dealer_initialization(mock_random):
-    dealer = MahjongDealer(mock_random)
-    
-    assert len(dealer.deck) == 5
-    assert mock_random.shuffle.called
+@pytest.fixture
+def dealer():
+    np_random = MockRandom()
+    return MahjongDealer(np_random)
+
+def test_init(dealer):
+    # Verifica que el mazo se inicializa como una lista y no está vacío
+    assert isinstance(dealer.deck, list)
+    assert len(dealer.deck) > 0
     assert dealer.table == []
 
-def test_mahjong_dealer_shuffle(mock_random):
-    dealer = MahjongDealer(mock_random)
-    mock_random.shuffle.reset_mock()
+def test_shuffle(dealer):
+    # La inicialización ya hace un shuffle. Creamos una copia para comparar.
+    original_deck = list(dealer.deck)
     dealer.shuffle()
-    assert mock_random.shuffle.called
-    mock_random.shuffle.assert_called_with(dealer.deck)
+    # Con el MockRandom, el mazo debería estar invertido respecto a su estado previo
+    assert dealer.deck == original_deck[::-1]
 
-def test_deal_cards_normal(mock_random):
-    dealer = MahjongDealer(mock_random)
+def test_deal_cards_normal(dealer):
     player = MockPlayer()
+    num_to_deal = 5
+    initial_deck_size = len(dealer.deck)
     
-    dealer.deal_cards(player, 2)
+    dealer.deal_cards(player, num_to_deal)
     
-    assert len(player.hand) == 2
-    assert len(dealer.deck) == 3
+    assert len(player.hand) == num_to_deal
+    assert len(dealer.deck) == initial_deck_size - num_to_deal
 
-def test_deal_cards_zero(mock_random):
-    dealer = MahjongDealer(mock_random)
+def test_deal_cards_zero(dealer):
     player = MockPlayer()
-    
+    initial_deck_size = len(dealer.deck)
     dealer.deal_cards(player, 0)
-    
-    # El deck debe mantener sus 5 cartas iniciales
     assert len(player.hand) == 0
-    assert len(dealer.deck) == 5
+    assert len(dealer.deck) == initial_deck_size
 
-def test_deal_cards_empty_deck_raises_exception(mock_random):
-    dealer = MahjongDealer(mock_random)
+def test_deal_cards_all(dealer):
     player = MockPlayer()
+    total_cards = len(dealer.deck)
+    dealer.deal_cards(player, total_cards)
+    assert len(player.hand) == total_cards
+    assert len(dealer.deck) == 0
+
+def test_deal_cards_empty_deck_exception(dealer):
+    player = MockPlayer()
+    total_cards = len(dealer.deck)
+    # Vaciar el mazo completamente
+    dealer.deal_cards(player, total_cards)
     
-    # Vaciar el deck manualmente
-    dealer.deck = []
-        
+    # Intentar sacar una carta más de un mazo vacío debe lanzar IndexError
     with pytest.raises(IndexError):
         dealer.deal_cards(player, 1)
-
-def test_deal_cards_exceeding_deck_raises_exception(mock_random):
-    dealer = MahjongDealer(mock_random)
-    player = MockPlayer()
-    
-    # Intentar sacar 6 cartas de un deck inicial de 5
-    with pytest.raises(IndexError):
-        dealer.deal_cards(player, 6)

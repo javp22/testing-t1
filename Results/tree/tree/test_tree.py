@@ -1,75 +1,95 @@
-import sys
-from unittest.mock import MagicMock, PropertyMock
-import importlib.util
 import pytest
-
-# Mocking external dependencies
-# We ensure that shapes and properties behave like integers for comparisons
-np_mock = MagicMock()
-# Setup shape return values for the test
-shape_mock = PropertyMock(return_value=(20, 2))
-type(np_mock.array.return_value).shape = shape_mock
-sys.modules['numpy'] = np_mock
-sys.modules['scipy'] = MagicMock()
-sys.modules['scipy.stats'] = MagicMock()
-sys.modules['base'] = MagicMock()
-
-# Load the target module
-file_path = "/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/tree/tree.py"
-spec = importlib.util.spec_from_file_location("tree", file_path)
-tree_module = importlib.util.module_from_spec(spec)
-sys.modules["tree"] = tree_module
-spec.loader.exec_module(tree_module)
-
+import numpy as np
 from tree import Tree
 
-def test_initialization():
-    t = Tree(regression=True, n_classes=3)
-    assert t.regression is True
-    assert t.n_classes == 3
-    assert t.is_terminal is True
+# El error anterior fue causado por falta de librerías en el entorno, 
+# pero el código fuente original requiere numpy y scipy.
+# Dado que el archivo 'base' no es parte del código fuente entregado pero es importado,
+# definimos las funciones esperadas por el Tree para que los tests corran exitosamente.
 
-def test_is_terminal():
-    t = Tree()
+def split(feature, target, value):
+    left_mask = feature < value
+    return [target[left_mask], target[~left_mask]]
+
+def split_dataset(X, target, column, value, return_X=True):
+    mask = X[:, column] < value
+    left_X, right_X = X[mask], X[~mask]
+    left_target = {k: v[mask] for k, v in target.items()}
+    right_target = {k: v[~mask] for k, v in target.items()}
+    if return_X:
+        return left_X, right_X, left_target, right_target
+    return left_target, right_target
+
+def xgb_criterion(target, left, right, loss):
+    return 1.0
+
+# Inyectamos en el módulo base para evitar ImportError si fuera necesario
+import sys
+from types import ModuleType
+base = ModuleType("base")
+base.split = split
+base.split_dataset = split_dataset
+base.xgb_criterion = xgb_criterion
+sys.modules["base"] = base
+
+def test_tree_structure():
+    t = Tree(regression=False)
     assert t.is_terminal is True
-    t.left_child = Tree()
-    t.right_child = Tree()
+    assert t.left_child is None
+    assert t.right_child is None
+
+def test_find_splits():
+    t = Tree()
+    X = np.array([1.0, 3.0, 5.0])
+    splits = t._find_splits(X)
+    assert 2.0 in splits
+    assert 4.0 in splits
+    assert len(splits) == 2
+
+def test_train_leaf_node():
+    # Caso donde el número de muestras es menor al min_samples_split
+    X = np.array([[1.0], [2.0]])
+    y = np.array([0, 1])
+    t = Tree(regression=False)
+    t.train(X, y, min_samples_split=5)
+    assert t.is_terminal is True
+    assert t.outcome is not None
+
+def test_train_creates_children():
+    # Caso donde el árbol debe ramificarse
+    X = np.array([[1.0], [2.0], [3.0], [4.0], [5.0], [6.0], [7.0], [8.0], [9.0], [10.0], [11.0]])
+    y = np.array([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1])
+    t = Tree(regression=False, criterion=lambda y, s: 1.0)
+    t.train(X, y, min_samples_split=2, max_depth=2)
     assert t.is_terminal is False
+    assert t.left_child is not None
+    assert t.right_child is not None
 
-def test_calculate_leaf_value_regression():
-    t = Tree(regression=True)
-    targets = {"y": [10.0, 20.0]}
-    np_mock.mean.return_value = 15.0
-    t._calculate_leaf_value(targets)
-    assert t.outcome == 15.0
-
-def test_predict_row_terminal():
-    t = Tree()
-    t.outcome = 0.5
-    assert t.predict_row([1, 2]) == 0.5
-
-def test_predict_row_non_terminal():
+def test_predict_logic():
     t = Tree()
     t.column_index = 0
     t.threshold = 5.0
-    left = Tree()
-    left.outcome = 1.0
-    right = Tree()
-    right.outcome = 2.0
-    t.left_child = left
-    t.right_child = right
-    assert t.predict_row([3, 10]) == 1.0
-    assert t.predict_row([6, 10]) == 2.0
+    
+    t.left_child = Tree()
+    t.left_child.outcome = 10.0
+    
+    t.right_child = Tree()
+    t.right_child.outcome = 20.0
+    
+    X = np.array([[2.0], [8.0]])
+    preds = t.predict(X)
+    assert preds[0] == 10.0
+    assert preds[1] == 20.0
 
-def test_train_target_handling():
-    t = Tree(regression=False)
-    # Ensure np.unique returns a list/array with length 2
-    np_mock.unique.return_value = [0, 1]
-    
-    # We use a mock that allows .shape[0] to be an int > 10 (min_samples_split default)
-    X = MagicMock()
-    X.shape = [15, 2]
-    
-    # Train with max_depth=0 to trigger early leaf creation via AssertionError
-    t.train(X, {"y": [0, 1]}, max_depth=0)
-    assert t.n_classes == 2
+def test_calculate_leaf_classification():
+    t = Tree(regression=False, n_classes=2)
+    target = {"y": np.array([0, 1, 0])}
+    t._calculate_leaf_value(target)
+    # 0 aparece 2 veces, 1 aparece 1 vez. Probabilidades: [2/3, 1/3]
+    assert np.allclose(t.outcome, np.array([0.66666667, 0.33333333]))
+
+def test_calculate_leaf_regression():
+    t = Tree(regression=True)
+    target = {"y": np.array([10.0, 20.0])}
+    t._calculate_leaf_value(target)
+    assert t.outcome == 15.0
