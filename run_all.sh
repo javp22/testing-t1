@@ -6,7 +6,7 @@ OUTPUT_BASE="Results"
 
 # Definir los proyectos y sus respectivos archivos usando un diccionario (array asociativo)
 declare -A projects
-'''
+
 projects[blackjack]="base.py dealer.py judger.py"
 projects[gin_rummy]="base.py action_event.py dealer.py"
 projects[mahjong]="player.py dealer.py game.py"
@@ -14,12 +14,6 @@ projects[stock4]="tableformat.py structure.py validate.py"
 projects[svm]="base.py svm.py"
 projects[tree]="base.py tree.py"
 projects[fuzzywuzzy]="fuzz.py string_processing.py StringMatcher.py utils.py"
-'''
-projects[gin_rummy]="action_event.py"
-projects[stock4]="validate.py"
-projects[svm]="svm.py"
-projects[tree]="base.py tree.py"
-projects[fuzzywuzzy]="fuzz.py"
 
 echo "=========================================================="
 echo "Iniciando la ejecución del Agente para proyectos públicos"

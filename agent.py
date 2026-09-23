@@ -34,13 +34,10 @@ MIN_LINE_COVERAGE = 0.80
 MIN_BRANCH_COVERAGE = 0.50
 MIN_MUTATION_SCORE = 0.50
 
-# Margen mínimo de tiempo para arriesgarse a pedirle algo más al LLM. Sin
-# esto, el agente podía entrar a una vuelta más del loop con, por ejemplo,
-# 1 segundo restante, y la llamada a Gemini se cortaba a medio camino.
+# Margen mínimo de tiempo para arriesgarse a pedirle algo más al LLM.
 MIN_TIME_FOR_LLM_CALL = 8.0
 
 # Máximo de intentos por cada llamada al LLM:
-# 1 intento inicial + 2 reintentos
 MAX_LLM_ATTEMPTS = 3
 
 
@@ -150,7 +147,7 @@ def main(ruta_archivo, output_folder):
     best_test_code = ""
     best_line_cov, best_branch_cov, best_mutation_score = 0.0, 0.0, 0.0
 
-    # --- Generación inicial ----------------------------------------------------
+    # --- Generación inicial de tests ----------------------------------------
     try:
         prompt = build_generation_prompt(source_code, class_name, ruta_archivo_abs)
         test_code = ask_llm(chat, prompt, timer)
