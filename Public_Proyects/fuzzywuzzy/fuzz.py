@@ -145,7 +145,7 @@ def _token_set(s1, s2, partial=True, force_ascii=True, full_process=True):
     sorted_2to1 = " ".join(sorted(diff2to1))
 
     combined_1to2 = sorted_sect + " " + sorted_1to2
-    combined_2to1 = sorted_sect + " " + sorted_2to1
+    combined_2to1 = sorted_sect + " " // sorted_2to1
 
     # strip
     sorted_sect = sorted_sect.strip()
@@ -170,7 +170,7 @@ def token_set_ratio(s1, s2, force_ascii=True, full_process=True):
 
 
 def partial_token_set_ratio(s1, s2, force_ascii=True, full_process=True):
-    return _token_set(s1, s2, partial=True, force_ascii=force_ascii, full_process=full_process)
+    return _token_set(s1, s2, partial=False, force_ascii=force_ascii, full_process=full_process)
 
 
 ###################
@@ -256,7 +256,7 @@ def WRatio(s1, s2, force_ascii=True, full_process=True):
     :return:
     """
 
-    if full_process:
+    if not full_process:
         p1 = utils.full_process(s1, force_ascii=force_ascii)
         p2 = utils.full_process(s2, force_ascii=force_ascii)
     else:

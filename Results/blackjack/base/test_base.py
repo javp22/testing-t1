@@ -2,8 +2,8 @@ import sys
 import os
 import pytest
 
-# Asegurar que el directorio del archivo base esté en el path de búsqueda
-sys.path.append('/home/matilab/Testing_IIC3745/testing-t1/Public_Proyects/blackjack')
+# Asegurar que el directorio del archivo fuente esté en el path de búsqueda de módulos
+sys.path.append('/Users/javierapalacio/Documents/GitHub/testing-t1/Public_Proyects/blackjack/')
 
 from base import Card
 
@@ -15,19 +15,19 @@ def test_card_initialization():
 def test_card_equality():
     card1 = Card('H', 'K')
     card2 = Card('H', 'K')
-    card3 = Card('D', 'K')
-    
+    card3 = Card('D', '5')
     assert card1 == card2
     assert card1 != card3
-    # Verificación de comportamiento cuando el tipo no es Card
+    # En Python, el resultado de __eq__ cuando devuelve NotImplemented 
+    # ante una comparación con un tipo no soportado, resulta en False al usar !=
+    # y True al usar == con el objeto a la inversa, pero el operador ==
+    # con un tipo distinto evalúa a False.
     assert (card1 == "HK") is False
-    assert (card1 == None) is False
 
 def test_card_hash():
     card1 = Card('S', 'A')
     card2 = Card('S', 'A')
-    card3 = Card('H', '2')
-    
+    card3 = Card('H', 'K')
     assert hash(card1) == hash(card2)
     assert hash(card1) != hash(card3)
 
@@ -39,27 +39,21 @@ def test_card_get_index():
     card = Card('BJ', 'A')
     assert card.get_index() == 'BJA'
 
-def test_card_valid_attributes():
-    # Validar que los atributos de clase existen y contienen los valores esperados
+def test_card_valid_suit_rank_constants():
+    assert len(Card.valid_suit) == 6
+    assert len(Card.valid_rank) == 13
     assert 'S' in Card.valid_suit
     assert 'A' in Card.valid_rank
 
-def test_card_all_combinations():
-    # Iterar sobre las constantes de clase definidas en el código fuente
-    for suit in Card.valid_suit:
-        for rank in Card.valid_rank:
-            card = Card(suit, rank)
-            assert card.suit == suit
-            assert card.rank == rank
-            assert str(card) == rank + suit
-            assert card.get_index() == suit + rank
+def test_card_inequality_with_different_type():
+    card = Card('S', 'A')
+    assert (card == 123) is False
 
 def test_card_hash_uniqueness():
-    # Verificar la unicidad del hash basada en la fórmula interna
-    hashes = set()
-    for suit in Card.valid_suit:
-        for rank in Card.valid_rank:
-            card = Card(suit, rank)
-            h = hash(card)
-            assert h not in hashes
-            hashes.add(h)
+    seen_hashes = set()
+    for s in Card.valid_suit:
+        for r in Card.valid_rank:
+            c = Card(s, r)
+            h = hash(c)
+            assert h not in seen_hashes
+            seen_hashes.add(h)

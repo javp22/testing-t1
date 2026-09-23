@@ -2,7 +2,7 @@
 module-path = "Public_Proyects/blackjack/dealer.py"
 timeout = 3.0
 excluded-modules = []
-test-command = "/root/not-root-env/bin/python3 -m pytest -x -q --tb=no Results/blackjack/dealer/test_dealer.py"
+test-command = "/Users/javierapalacio/Documents/GitHub/testing-t1/venv/bin/python3 -m pytest -x -q --tb=no Results/blackjack/dealer/test_dealer.py"
 
 [cosmic-ray.distributor]
 name = "local"

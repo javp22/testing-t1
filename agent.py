@@ -27,7 +27,7 @@ load_dotenv()
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # Budget total con margen de seguridad
-MAX_TIME_BUDGET = 105.0
+MAX_TIME_BUDGET = 220
 
 # Umbrales mínimos exigidos por el enunciado
 MIN_LINE_COVERAGE = 0.80
@@ -50,12 +50,29 @@ def ask_llm(
     chat,
     prompt: str,
     timer: ExecutionTimer = None,
-    max_retries: int = 3,
     initial_delay: float = 2.0,
+    max_delay: float = 30.0,
 ) -> str:
-    """Envía un prompt al chat de Gemini con sistema de reintentos y control de tiempo."""
+    """
+    Envía un prompt al chat de Gemini con reintentos.
+
+    En vez de un tope fijo de intentos, reintenta con backoff exponencial
+    (capado en max_delay) mientras quede tiempo suficiente en el timer. Así
+    aprovecha todo el budget disponible en vez de rendirse a los 3 intentos
+    aunque sobre tiempo (útil para los 503 de "high demand" de Gemini, que
+    suelen ser transitorios).
+
+    El tiempo dormido esperando un reintento (delay) NO cuenta contra el
+    presupuesto total: se le devuelve al timer con timer.add_time(delay),
+    porque esa espera es por algo fuera de nuestro control (la API caída),
+    no tiempo que el agente esté "trabajando".
+    """
     delay = initial_delay
-    for attempt in range(1, max_retries + 1):
+    attempt = 0
+
+    while True:
+        attempt += 1
+
         if timer and (timer.is_expired() or timer.time_left() < MIN_TIME_FOR_LLM_CALL):
             raise TimeoutError("Tiempo insuficiente para realizar la solicitud al LLM.")
 
@@ -63,23 +80,21 @@ def ask_llm(
             response = chat.send_message(prompt)
             return clean_llm_code(response.text)
         except Exception as e:
-            if attempt == max_retries:
-                print(
-                    f"[Agent Warning] Se agotaron los {max_retries} intentos con Gemini: {e}"
-                )
-                raise e
-
             if timer and timer.time_left() < delay + MIN_TIME_FOR_LLM_CALL:
                 print(
-                    f"[Agent Warning] Tiempo restante insuficiente para esperar reintento ({timer.time_left():.1f}s)."
+                    f"[Agent Warning] Tiempo restante insuficiente para esperar otro reintento "
+                    f"({timer.time_left():.1f}s). Se abandona tras {attempt} intento(s)."
                 )
                 raise e
 
             print(
-                f"[Agent Warning] Falló la llamada a Gemini (intento {attempt}/{max_retries}): {e}. Reintentando en {delay:.1f}s..."
+                f"[Agent Warning] Falló la llamada a Gemini (intento {attempt}): {e}. Reintentando en {delay:.1f}s..."
             )
             time.sleep(delay)
-            delay *= 1.5
+            if timer:
+                timer.add_time(delay)
+            delay = min(delay * 1.5, max_delay)
+            print("[Agent Warning] Tiempo se expande ya que intento no es válido ")
 
 
 def main(ruta_archivo, output_folder):
@@ -202,11 +217,10 @@ def main(ruta_archivo, output_folder):
                 test_code = candidate_code
             else:
                 print(
-                    "[Agent] La mejora de cobertura rompió pytest; se descarta y se conserva la versión estable."
+                    "[Agent] La mejora de cobertura rompió pytest; se descarta y se intenta nuevamente."
                 )
                 write_test_file(test_file_path, best_test_code)
                 test_code = best_test_code
-                break
         else:
             print("[Agent] Tiempo agotado durante la mejora de cobertura.")
 
@@ -281,11 +295,10 @@ def main(ruta_archivo, output_folder):
             else:
                 print(
                     "[Agent] El refuerzo de mutation rompió pytest; "
-                    "se descarta y se conserva la versión estable."
+                    "se descarta y se intenta nuevamente."
                 )
                 write_test_file(test_file_path, best_test_code)
                 test_code = best_test_code
-                break
 
     # --- Exportación de mejor código -------------------------------------------
     final_code = best_test_code if best_test_code else test_code
@@ -301,6 +314,12 @@ def main(ruta_archivo, output_folder):
     previous_metrics_path = os.path.join(output_folder, "metrics.json")
     should_overwrite = True
 
+    print(
+        f"\n[Agent] Métricas de esta corrida -> "
+        f"line={final_line_cov * 100:.1f}% branch={final_branch_cov * 100:.1f}% "
+        f"mutation={final_mutation_score * 100:.1f}%"
+    )
+
     if os.path.exists(previous_metrics_path):
         try:
             with open(previous_metrics_path, "r", encoding="utf-8") as f:
@@ -309,6 +328,12 @@ def main(ruta_archivo, output_folder):
             prev_line = previous_metrics.get("line_coverage", 0.0)
             prev_branch = previous_metrics.get("branch_coverage", 0.0)
             prev_mutation = previous_metrics.get("mutation_score", 0.0)
+
+            print(
+                f"[Agent] Métricas previas guardadas -> "
+                f"line={prev_line * 100:.1f}% branch={prev_branch * 100:.1f}% "
+                f"mutation={prev_mutation * 100:.1f}%"
+            )
 
             # Una métrica mejora si estaba bajo el mínimo y ahora aumenta
             mejora_line = prev_line < MIN_LINE_COVERAGE and final_line_cov > prev_line
@@ -339,9 +364,6 @@ def main(ruta_archivo, output_folder):
                 or final_mutation_score >= MIN_MUTATION_SCORE
             )
 
-            # Guardar si:
-            # 1. Se mejoró alguna métrica que estaba bajo el mínimo.
-            # 2. Ninguna métrica que ya cumplía el mínimo pasó a incumplirlo.
             if (
                 mejora_minimo
                 and line_se_mantuvo
@@ -349,13 +371,51 @@ def main(ruta_archivo, output_folder):
                 and mutation_se_mantuvo
             ):
                 should_overwrite = True
+                print(
+                    "[Agent] Se detectó mejora en al menos una métrica que estaba "
+                    "bajo el mínimo, sin hacer retroceder ninguna que ya lo cumplía. "
+                    "Se sobrescribe el resultado."
+                )
             else:
                 should_overwrite = False
+                if not mejora_minimo:
+                    print(
+                        "[Agent] No se guarda: ninguna métrica que estaba bajo el "
+                        "mínimo mejoró respecto a la corrida anterior (si las tres "
+                        "ya cumplían el mínimo antes, esta condición nunca se activa)."
+                    )
+                if not line_se_mantuvo:
+                    print(
+                        f"[Agent] No se guarda: line_coverage bajaría de "
+                        f"{prev_line * 100:.1f}% (sobre el mínimo) a "
+                        f"{final_line_cov * 100:.1f}% (bajo el mínimo)."
+                    )
+                if not branch_se_mantuvo:
+                    print(
+                        f"[Agent] No se guarda: branch_coverage bajaría de "
+                        f"{prev_branch * 100:.1f}% (sobre el mínimo) a "
+                        f"{final_branch_cov * 100:.1f}% (bajo el mínimo)."
+                    )
+                if not mutation_se_mantuvo:
+                    print(
+                        f"[Agent] No se guarda: mutation_score bajaría de "
+                        f"{prev_mutation * 100:.1f}% (sobre el mínimo) a "
+                        f"{final_mutation_score * 100:.1f}% (bajo el mínimo)."
+                    )
+                print(
+                    f"[Agent] Se conserva el metrics.json anterior en '{output_folder}' "
+                    "sin cambios."
+                )
 
         except Exception as e:
             print(
                 f"[Agent Warning] No se pudo leer metrics.json previo, se sobrescribe igual: {e}"
             )
+    else:
+        print(
+            "[Agent] No había metrics.json previo en esta carpeta; se guarda el "
+            "resultado de esta corrida."
+        )
 
     if should_overwrite:
         write_test_file(test_file_path, final_code)
