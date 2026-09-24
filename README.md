@@ -1,5 +1,7 @@
 # Agente de generación automática de tests
 
+[Link Video Explicativo](https://uccl0-my.sharepoint.com/:v:/g/personal/javierapalacio_uc_cl/IQC-u7quNfuESa4MYwTfxWMuATG7Mwu6_7LhNbEf92C0FtY?nav=eyJyZWZlcnJhbEluZm8iOnsicmVmZXJyYWxBcHAiOiJPbmVEcml2ZUZvckJ1c2luZXNzIiwicmVmZXJyYWxBcHBQbGF0Zm9ybSI6IldlYiIsInJlZmVycmFsTW9kZSI6InZpZXciLCJyZWZlcnJhbFZpZXciOiJNeUZpbGVzTGlua0NvcHkifX0&e=UwzYCQ)
+
 ## Estrategia y arquitectura
 
 El agente recibe un archivo Python y genera una suite `pytest` en cuatro fases. `build_generation_prompt` solicita una primera suite usando únicamente el código fuente, con casos normales, límites y excepciones. Si `pytest` falla, `build_fix_prompt` entrega al LLM la suite y el log para corregir imports, APIs o aserciones. Cuando la suite pasa, se mide cobertura de líneas y ramas con `coverage`; si no alcanza 80% y 50%, `build_coverage_prompt` solicita casos dirigidos a las líneas y ramas faltantes. Finalmente, Cosmic Ray calcula el mutation score mediante `cr-rate` y los mutantes sobrevivientes se entregan a `build_mutation_prompt` para reforzar las pruebas. Los candidatos que rompen `pytest` se descartan y se conserva la última versión estable. Cada objetivo tiene un presupuesto de 105 segundos.
